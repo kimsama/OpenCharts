@@ -41,4 +41,19 @@ Core value: User-entered US/Korean instrument data with truthful source and fres
 
 ## Traceability
 
-Pending roadmap creation; map every requirement to the POC phase without dropping either market.
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| QUERY-01 | Phase 1 | Pending |
+| QUERY-02 | Phase 1 | Pending |
+| QUERY-03 | Phase 1 | Pending |
+| QUERY-04 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-03 | Phase 1 | Pending |
+| SAFE-01 | Phase 1 | Pending |
+| SAFE-02 | Phase 1 | Pending |
+| VERIFY-01 | Phase 1 | Pending |
+| VERIFY-02 | Phase 1 | Pending |
+| SHIP-01 | Phase 1 | Pending |
+
+Coverage: 12/12 v1 requirements mapped exactly once; no orphaned or duplicated requirements.
