@@ -4,7 +4,7 @@ validated_frontend_head: a707c186cbe6cdcf5e6612fe9c4a9e2186b24f4d
 validated_production_source: a957cd00e097d8468d1f06f0b5ba3bd5862e91e2
 validated_backend_head: 2f3d73f3edac495970a0b2e6112ee645c3d328bd
 validated_fixture_head: 671c3bf5571ec2e653040ba9fcf1eab555171f89
-status: task-1-evidence-drafted-ship-pending
+status: complete
 ---
 
 # Native OpenCharts validation
@@ -69,8 +69,41 @@ or prove a specific repair.
 | Single entry and actual browser verification (01-06) | `a707c186cbe6cdcf5e6612fe9c4a9e2186b24f4d` | Spec and quality P0=0/P1=0/P2=0 |
 
 All production corrections have affected unit or browser regressions. The
-01-07 documentation review is intentionally pending until this new evidence
-commit is inspected; Task 2 and `SHIP-01` do not begin before that gate.
+01-07 Task 1 document spec and quality reviews also ended P0=0/P1=0/P2=0.
+Task 2 published the reviewed source trees; only final CI/metadata bookkeeping
+remains pending.
+
+## Publication draft
+
+| Repository | Open PR/base | Reviewed public source head | Stable review |
+| --- | --- | --- | --- |
+| OpenCharts | [#1](https://github.com/kimsama/OpenCharts/pull/1), `milestone/kb-market-data-poc` | `c582a8b14051092f6a3cefb1fbda4f6d8a247254` | [P0=0/P1=0/P2=0](https://github.com/kimsama/OpenCharts/pull/1#issuecomment-5744115837) |
+| KB journal | [#195](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195), `dev`, merge state CLEAN | `efe1f1f96cca85466617b8e90933df51ca1e1ed3` | [P0=0/P1=0/P2=0](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744105514) |
+
+OpenCharts source publication used one clean commit on approved milestone
+parent `c089aec...`. Its tree
+`72c7da1f82e02b9828eee21d4d2300f4fab8caa7` is byte-identical to unpublished
+final-record head `e632990c...`. The old unpublished head is preserved only
+under a local backup ref and was never pushed. Historical `a957cd00...` scopes
+the validated production runtime source; `a707c186...` scopes the final
+E2E/tests/config evidence. Their complete trees are not claimed equal to
+`72c7da1f...`, and neither is claimed as an ancestor of the clean public
+commit.
+
+The OpenCharts repository has no configured workflows, protected milestone
+base, rulesets or required checks. That is a no-check policy, not a green CI
+run. Initial KB run 35459216004 failed nine logging-capture assertions after
+6,855 tests passed. [CI-01](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744168994)
+was posted before the seven-line test-only logger-state fixture; the separate
+[disposition](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744254229)
+records focused checks and review. Production source/live behavior did not
+change. Final exact-head run 35460523435 completed with all four jobs passing:
+Python 6,864 passed, 20 skipped, one deselected and 30 warnings in 543.51
+seconds. No job was skipped; conditional frontend steps are recorded in
+`01-PR-REVIEW.md`. Required-check query reports none, while direct branch-policy
+inspection returned 403. The stable OpenCharts acceptance comment above is the
+source-review anchor for the metadata-only final commit, avoiding a
+self-referential commit hash; root adds the metadata SHA after fresh review.
 
 ## Final automated and visual evidence
 
@@ -149,7 +182,7 @@ commit is inspected; Task 2 and `SHIP-01` do not begin before that gate.
 | SAFE-02 | COMPLETE | One native entry, fixed startup mode, demo/feed/telemetry/trading/poll/history isolation and explicit unavailable panels |
 | VERIFY-01 | COMPLETE | Backend 283 focused tests, frontend 61 focused tests, fixture 3 tests/static checks and both production builds |
 | VERIFY-02 | COMPLETE WITH NAMED LIMITS | Real native fixture/browser plus exactly two current normal-runtime submissions; historical 503 cause, KOSDAQ entitlement and DRAM routing remain unverified |
-| SHIP-01 | PENDING TASK 2 | Requires two open companion PRs, final remote-HEAD reviews and observed required-check state |
+| SHIP-01 | COMPLETE | Both companion PRs are OPEN/non-draft, final whole-PR reviews are P0/P1/P2=0, OC has no configured checks, and all four configured KB CI jobs passed at reviewed head `efe1f1f...` |
 
 ## Local operation by configuration name
 
@@ -181,5 +214,6 @@ instructions.
 - Provider timestamps remain unavailable in the accepted observations.
 - This is manual daily snapshot data. Streaming, polling, symbol catalog search,
   intraday intervals and trading are outside the POC.
-- `SHIP-01` remains pending until Task 2 records both open PRs, current reviewed
-  remote heads and required-check policy/results.
+- `SHIP-01` is complete. Both PRs remain OPEN; the metadata-only commit is
+  linked after fresh review through the stable OpenCharts acceptance comment.
+  No merge or cleanup is authorized.

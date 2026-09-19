@@ -75,6 +75,40 @@ process 안에서만 격리되며 shared process에서 복원 가능한 fixture�
 결과 양쪽 모두 151 occurrences, 48 signatures였고 introduced/resolved는 각각
 0이었다. 이 비교를 typecheck 성공으로 표현하지 않는다.
 
+## 공개 PR 상태
+
+| 저장소 | OPEN PR / base | 검토한 공개 source head | 독립 검토 |
+| --- | --- | --- | --- |
+| OpenCharts | [#1](https://github.com/kimsama/OpenCharts/pull/1) / `milestone/kb-market-data-poc` | `c582a8b14051092f6a3cefb1fbda4f6d8a247254` | [P0=0/P1=0/P2=0](https://github.com/kimsama/OpenCharts/pull/1#issuecomment-5744115837) |
+| KB journal | [#195](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195) / `dev`, merge state CLEAN | `efe1f1f96cca85466617b8e90933df51ca1e1ed3` | [P0=0/P1=0/P2=0](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744105514) |
+
+OpenCharts는 공개 전 정리에서 승인된 milestone parent 위에 하나의 clean
+commit을 만들었다. 공개 tree `72c7da1f82e02b9828eee21d4d2300f4fab8caa7`은
+공개 직전 unpublished head `e632990c...`의 complete tree와 동일하다.
+`a957cd00...`은 검증한 production runtime source, `a707c186...`은 최종
+E2E/tests/config 상태를 가리키는 범위가 정해진 실행·검토 증거다. 이 두 SHA의
+complete tree가 `72c7da1f...`과 같거나 clean 공개 commit의 ancestor라고
+주장하지 않는다.
+
+OpenCharts fork에는 workflow, protected base, ruleset 또는 required check가
+설정되어 있지 않다. 이는 CI green이 아니라 configured check가 없다는 뜻이다.
+첫 KB CI run 35459216004는 6,855개 통과 뒤 logging capture assertion 9개가
+실패했다. [원본 CI-01](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744168994)을
+수정 전에 게시했고, Alembic test `fileConfig`가 import된 coordinator logger를
+disabled 상태로 남긴 것이 원인이었다. 7줄 test-only fixture가 logger flag를
+격리·복원하며 production source와 live 동작은 바뀌지 않았다. 별도
+[disposition](https://github.com/kimsama/kb-us-stock-trading-journal/pull/195#issuecomment-5744254229)에
+검증과 review를 기록했다.
+
+최종 exact-head run 35460523435는 `2026-09-19T18:23:40Z`에 완료되었고 4개
+job이 모두 통과했다. Python은 543.51초 동안 6,864 passed, 20 skipped,
+1 deselected, 30 warnings였다. 건너뛴 job은 없고, 통과한 frontend job 안에서
+distribution, `installChromium`, packaged-Chromium test와 installed-browser
+verification step이 조건부로 생략되었다. Required-check query는 none이고,
+branch-policy 직접 조회 403 제한은 green configured CI와 별도로 기록한다.
+Source acceptance는 위 stable review comment에 고정하며 metadata commit SHA는
+fresh review 뒤 그 comment에 추가해 자기참조를 피한다. `SHIP-01`은 완료다.
+
 ## 로컬 실행
 
 값이나 개인 환경 경로 대신 설정 이름과 placeholder만 사용한다.
@@ -115,9 +149,9 @@ Backend credential 값은 frontend로 전달하지 않는다. Backend 시작과 
 - 관찰한 provider timestamp는 unavailable이었다.
 - 자동 polling, streaming, 종목 catalog search, intraday interval과 trading은
   범위 밖이다.
-- 두 companion PR, 최종 remote HEAD review와 required-check 상태는 다음
-  delivery task가 기록한다. 따라서 이 문서는 아직 `SHIP-01` 완료를 주장하지
-  않는다.
+- 두 companion PR은 OPEN/non-draft이고 최종 whole-PR review는 P0/P1/P2=0이다.
+  OpenCharts는 configured check가 없고 KB configured CI 4개 job은 모두
+  통과했다. `SHIP-01`은 완료지만 두 PR은 merge하지 않고 OPEN으로 유지한다.
 
 기존 research HTML과 standalone validation 문서는 삭제하지 않는다. 최종
 native 결과와 구분되는 날짜가 있는 역사 자료로 남긴다.

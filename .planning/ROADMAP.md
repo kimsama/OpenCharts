@@ -10,7 +10,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: US·KR 수동 시세 조회 POC** - 입력한 종목의 현재가와 일봉을 KB backend에서 조회하고 연결·실패 상태를 검증한다.
+- [x] **Phase 1: US·KR 수동 시세 조회 POC** - 입력한 종목의 현재가와 일봉을 KB backend에서 조회하고 연결·실패 상태를 검증한다.
 
 ## Phase Details
 
@@ -28,7 +28,7 @@
   5. 사용자가 양 시장의 입력 경계·실패·지연 표기·요청 순서를 다룬 테스트와 frontend production build 결과, 실제 로컬 브라우저의 입력 → backend → 정규화 응답 → 차트 검증 기록을 확인할 수 있다. 실제 연결의 자격·권한 부족은 명시적으로 기록되며, 두 PR은 현재 HEAD 독립 리뷰에서 P0=0/P1=0에 도달하고 required checks 상태 및 남은 P2를 보고한다. (VERIFY-01, VERIFY-02, SHIP-01)
   6. 단일 index에서 고정 startup demo/KB mode를 사용한다. KB에서는 demo state·feed·telemetry·모든 trading write·자동 조회·가짜 depth/portfolio를 차단하고, 로컬 drawing CRUD/undo/redo·지표·설정은 유지한다. 원래 거래일이 Seoul/US timezone의 실제 axis/crosshair/plugin tooltip에서 보존되고 누락 volume/VWAP가 조작되지 않는다. (QUERY-02, DATA-03, SAFE-02)
 
-**Plans**: 5 current plans — 01-01, 01-04, 01-05 and 01-06 completed; 01-07 executing. Historical 01-02/03 are superseded.
+**Plans**: All 5 current plans complete — 01-01/04/05/06/07. Historical 01-02/03 are superseded.
 
 Plans:
 **Wave 1 — completed backend dependency**
@@ -49,7 +49,7 @@ Plans:
 
 **Wave 5** *(after reviewed 01-06)*
 
-- [ ] 01-07-PLAN.md — Native visual/live evidence and two reviewed OPEN PRs
+- [x] 01-07-PLAN.md — Native visual/live evidence and two reviewed OPEN PRs
 
 Historical plans: 01-02-SUPERSEDED.md and 01-03-SUPERSEDED.md. Their dated reviews/summaries remain evidence of the previous implementation, not acceptance of the corrected native UI.
 
@@ -71,7 +71,7 @@ Historical plans: 01-02-SUPERSEDED.md and 01-03-SUPERSEDED.md. Their dated revie
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. US·KR 수동 시세 조회 POC | 4/5 current | Native live evidence and OPEN PR delivery | - |
+| 1. US·KR 수동 시세 조회 POC | 5/5 current | Complete; two reviewed OPEN PRs, backend CI passed | 2026-09-20 |
 
 ## Coverage
 
