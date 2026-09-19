@@ -20,12 +20,28 @@
 **Depends on**: Nothing (first phase); 기존 OpenCharts 및 KB backend의 인증·읽기 전용 전송 경계를 재사용한다.
 **Requirements**: QUERY-01, QUERY-02, QUERY-03, QUERY-04, DATA-01, DATA-02, DATA-03, SAFE-01, SAFE-02, VERIFY-01, VERIFY-02, SHIP-01
 **Success Criteria** (what must be TRUE):
+
   1. 사용자가 US/KR 시장과 임의의 지원 티커를 입력해 명시적으로 조회하면 기존 거래 내역 없이도 선택 계정의 KB 연결을 통해 현재가와 일봉 차트를 확인한다. US 대소문자 정규화와 한국 6자리 코드의 선행 0이 유지되며, 요청·재시도·반환 봉 수는 제한된다. (QUERY-01, QUERY-02, DATA-01, DATA-02)
   2. UI에서 요청 시장·종목, 통화, 출처, 제공된 공급자 시각, 수집 시각과 지연/미확인 상태를 확인할 수 있다. 누락된 가격·거래량·시각은 만들어 채우지 않으며, 잘못된 숫자·날짜 또는 다른 시장·종목의 응답과 검증되지 않은 거래소 라우팅을 정상 결과로 표시하지 않는다. (QUERY-03, DATA-02, DATA-03)
   3. 사용자가 잘못된/미지원 티커, 설정 누락, 공급자 거절·데이터 없음, 시간 초과, backend 오프라인을 구분할 수 있다. 연속 조회 시 이전 요청의 늦은 응답이 새 결과를 덮거나 이전 봉을 새 종목으로 표시하지 않는다. (QUERY-04)
   4. 연결된 POC에서 조회할 때 브라우저에 비밀키·토큰·원본 계좌번호·공급자 원문이 전달되지 않고, 허용된 로컬 읽기 경로로만 접근한다. 해당 화면에는 데모 피드나 모의 주문 동작이 섞이지 않으며 기존 데모는 별도로 이용할 수 있다. (SAFE-01, SAFE-02)
   5. 사용자가 양 시장의 입력 경계·실패·지연 표기·요청 순서를 다룬 테스트와 frontend production build 결과, 실제 로컬 브라우저의 입력 → backend → 정규화 응답 → 차트 검증 기록을 확인할 수 있다. 실제 연결의 자격·권한 부족은 명시적으로 기록되며, 두 PR은 현재 HEAD 독립 리뷰에서 P0=0/P1=0에 도달하고 required checks 상태 및 남은 P2를 보고한다. (VERIFY-01, VERIFY-02, SHIP-01)
-**Plans**: TBD
+
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 01-01-PLAN.md — US HTTP backend tracer and KR snapshot expansion
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 01-02-PLAN.md — Both-market connected page, fixed proxy and browser path
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 01-03-PLAN.md — Browser/live evidence and two reviewed open PRs
+
 **UI hint**: yes
 
 ### Delivery Boundaries
@@ -43,7 +59,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. US·KR 수동 시세 조회 POC | 0/TBD | Not started | - |
+| 1. US·KR 수동 시세 조회 POC | 0/3 | Not started | - |
 
 ## Coverage
 

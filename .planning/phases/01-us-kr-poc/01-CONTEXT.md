@@ -7,7 +7,7 @@ The user wants a small real connection POC, using OpenCharts with the existing K
 <decisions>
 ## Implementation Decisions
 
-- **D-01**: Users select US or KR, type a ticker, choose a supported US provider routing market when needed, and explicitly press 조회. Keep leading zeros and preserve the submitted identity throughout the request/result lifecycle.
+- **D-01**: Users select US or KR, type a ticker, choose US NAS/NYS/AMX or domestic KOSPI/KOSDAQ as the provider query market, and explicitly press 조회. Keep leading zeros and preserve the submitted identity throughout the request/result lifecycle. The UI must label this as query routing, not a verified listing exchange.
 - **D-02**: The POC returns a quote and a bounded daily OHLCV series for arbitrary supported symbols, without needing a pre-existing journal trade subject. It uses one selected account's single active KB connection and retained token; no fallback to another account.
 - **D-03**: Only fixed KB quote/candle read operations are callable. No generic TR/path forwarding, broker orders, ledger writes, new credential UI, background polling or WebSocket.
 - **D-04**: Source, currency, acquired-at and delayed/unknown status are visible. Missing provider times, bid/ask and volume remain missing. The actual API response, not a public example, determines delay. Unsupported/ambiguous venue mapping is explicit; DRAM must not be silently relabelled Nasdaq.
@@ -24,7 +24,7 @@ The user wants a small real connection POC, using OpenCharts with the existing K
 </decisions>
 
 <specifics>
-Use the approved HTML research as context. US public GSA10020 quote includes a delay field, GSC10060 existing daily body uses chart class 3, and domestic IVU10070/IVS11560 need exact official field semantics before their operational values are fixed. Public sample ovtm_mkt_clsf=1 is NOT proof of the regular-session parameter. Use the existing backend transport/lease; preserve its auth failure quarantine/manual-sync latch.
+Use the approved HTML research as context and the newer focused `OFFICIAL-CONTRACT.md` for exact provider fields. Official metadata confirms domestic regular quote ovtm_mkt_clsf=0 and daily market codes KOSPI=0/KOSDAQ=1; the example value 1 for quote is not defined. GSC10060 existing daily body uses chart class 3. Use the existing backend transport/lease; preserve its auth failure quarantine/manual-sync latch.
 </specifics>
 
 <deferred>
