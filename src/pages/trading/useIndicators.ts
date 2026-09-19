@@ -11,6 +11,7 @@ import {
   stochastic,
   vwap,
   INDICATOR_REGISTRY,
+  type CandleData,
   type IndicatorType,
 } from "../../lib/indicators.ts";
 import { toIndicatorCandles } from "./utils.ts";
@@ -22,6 +23,9 @@ export function useIndicators(
   chartData: CandlestickData<Time>[],
   activeIndicators: IndicatorType[],
   isDark: boolean,
+  reportedCandles?: CandleData[],
+  requireReportedVolume = false,
+  chartEpoch = 0,
 ): void {
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<"Line"> | ISeriesApi<"Histogram">>>(
     new Map(),
@@ -29,10 +33,9 @@ export function useIndicators(
   const colors = isDark ? CHART_COLORS.dark : CHART_COLORS.light;
 
   useEffect(() => {
-    if (!chartRef.current || !candleSeriesRef.current || chartData.length === 0) return;
+    if (!chartRef.current) return;
 
     const chart = chartRef.current;
-    const indCandles = toIndicatorCandles(chartData);
 
     // Remove old indicator series
     for (const [_key, series] of indicatorSeriesRef.current) {
@@ -43,6 +46,8 @@ export function useIndicators(
       }
     }
     indicatorSeriesRef.current.clear();
+    if (!candleSeriesRef.current || chartData.length === 0) return;
+    const indCandles = reportedCandles ?? toIndicatorCandles(chartData);
 
     for (const type of activeIndicators) {
       const config = INDICATOR_REGISTRY.find((r) => r.type === type);
@@ -185,7 +190,7 @@ export function useIndicators(
           break;
         }
         case "VWAP": {
-          const data = vwap(indCandles);
+          const data = vwap(indCandles, requireReportedVolume);
           const s = chart.addLineSeries({
             color: config.color,
             lineWidth: 2,
@@ -200,5 +205,12 @@ export function useIndicators(
     }
     // chartRef/candleSeriesRef are stable refs; colors derived from isDark dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndicators, chartData, isDark]);
+  }, [
+    activeIndicators,
+    chartData,
+    isDark,
+    reportedCandles,
+    requireReportedVolume,
+    chartEpoch,
+  ]);
 }

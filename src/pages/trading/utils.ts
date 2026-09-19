@@ -1,5 +1,6 @@
 import type { CandlestickData, Time } from "lightweight-charts";
 import type { CandleData } from "../../lib/indicators.ts";
+import type { MarketSnapshot } from "../../services/marketSnapshot.ts";
 import { KNOWN_CURRENCIES } from "./constants.ts";
 import type { Timeframe } from "./constants.ts";
 
@@ -56,6 +57,65 @@ export function toIndicatorCandles(candles: CandlestickData<Time>[]): CandleData
     close: c.close,
     volume: 0,
   }));
+}
+
+export interface ManualDailyCandle {
+  time: number;
+  tradingDate: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
+}
+
+export function tradingDateToUtcSeconds(value: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new Error("Invalid trading date");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const coordinate = Date.UTC(year, month - 1, day);
+  const date = new Date(coordinate);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error("Invalid trading date");
+  }
+  return coordinate / 1000;
+}
+
+export function snapshotBarsToNativeCandles(
+  bars: MarketSnapshot["bars"],
+): ManualDailyCandle[] {
+  return bars.map((bar) => {
+    const values = [bar.open, bar.high, bar.low, bar.close].map(Number);
+    const volume = bar.volume === null ? null : Number(bar.volume);
+    if (values.some((value) => !Number.isFinite(value)) || (volume !== null && !Number.isFinite(volume))) {
+      throw new Error("Invalid snapshot chart value");
+    }
+    return {
+      time: tradingDateToUtcSeconds(bar.date),
+      tradingDate: bar.date,
+      open: values[0]!,
+      high: values[1]!,
+      low: values[2]!,
+      close: values[3]!,
+      volume,
+    };
+  });
+}
+
+export function snapshotPriceDigits(values: Array<string | null>): number {
+  const digits = values.reduce((maximum, value) => {
+    if (value === null) return maximum;
+    const decimal = value.indexOf(".");
+    return Math.max(maximum, decimal === -1 ? 0 : value.length - decimal - 1);
+  }, 0);
+  if (digits > 12) throw new Error("Unsupported snapshot precision");
+  return digits;
 }
 
 /** Format seconds remaining as M:SS or H:MM:SS */

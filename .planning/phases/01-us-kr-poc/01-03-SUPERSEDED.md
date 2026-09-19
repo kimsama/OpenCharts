@@ -1,6 +1,8 @@
 ---
 phase: 01-us-kr-poc
 plan: "03"
+status: superseded
+superseded_by: ["01-07"]
 type: execute
 wave: 3
 depends_on: ["01-01", "01-02"]
@@ -56,6 +58,7 @@ must_haves:
 ---
 
 <objective>
+HISTORICAL ONLY: this standalone-page delivery plan is superseded by 01-07 after native frontend plans 01-04 through 01-06. Preserve prior review/validation records without implying native-UI acceptance or a confirmed historical 503 cause.
 연결 POC의 실제 검증 범위와 제한을 확인하고 두 저장소의 검토된 열린 PR을 전달한다. D-07/D-08대로 실행·리뷰·수정·CI를 마치며 병합하지 않는다. 기존 US/KR fixture 테스트와 실제 KB 호출 결과는 별개의 증거다.
 </objective>
 
@@ -101,7 +104,7 @@ OC/OpenCharts and KB/kb-us-stock-trading-journal retain the two distinct workdir
   <action>
     Verify 01-01 and 01-02 task reviews and compare tested SHAs with current changes. Reuse unchanged focused passing evidence, then run the real HTTP Playwright suite and perform one visual desktop/mobile pass with the current installed browser tooling. Check both editable symbols, safe account alias selection, US/KR query-market labels, Enter/button submission, delayed/unknown labels, unavailable times/volume, submitted-versus-edited identity, rapid US/KR/account switching and a provider/backend failure. Inspect actual candles and volume omission, keyboard focus/error announcement, 390px no-overflow, resize/unmount cleanup, and navigation to/from the preserved demo via full document loads. Verify no connected-page demo feed, paper order requests or telemetry initialization, with the configured test-key spy and the browser network log. An HTTP 200 or server startup alone is not visual validation.
 
-    Reuse accepted bounded live US/KR observations from 01-01 if the final code and contract are unchanged. If either approved probe remains unperformed and the selected account's existing binding/token ownership permits it, perform at most one quote and one daily read for MU/NAS and one quote/one daily for 005930/KOSPI, serially, through the actual connected browser/backend route. Use existing backend credential binding only; do not print or export credentials, tokens, raw account/connection identifiers, raw responses or private coordinates. Never change credential binding/quarantine, bypass ownership, kill original processes, enumerate holdings/history, submit orders, or repeat a refused operation automatically. Provider responses must pass the production validators. Confirm KR inq_clsf=1 with explicit current Seoul date actually supplies the intended recent series, echoed market/symbol and accepted business status before its production activation. KOSDAQ/DRAM live checks are conditional on a separately verified supported route and are not a reason to broaden the request budget or invent mapping. Preserve execution-history/ingest gates regardless of snapshot success.
+    Reuse accepted bounded live US/KR observations from 01-01 if the final code and contract are unchanged. If either approved probe remains unperformed and the selected account's existing binding/token ownership permits it, perform at most one quote and one daily read for MU/NAS and one quote/one daily for 005930/KOSPI, serially, through the actual connected browser/backend route. Use existing backend credential binding only; do not print or export credentials, tokens, raw account/connection identifiers, raw responses or private coordinates. Never change credential binding/quarantine, bypass ownership, kill original processes, enumerate holdings/history, submit orders, or repeat a refused operation automatically. Provider responses must pass the production validators. Confirm KR inq_clsf=1 with start date 180 calendar days before the current Seoul date actually supplies the intended recent series, echoed market/symbol and accepted business status before its production activation. KOSDAQ/DRAM live checks are conditional on a separately verified supported route and are not a reason to broaden the request budget or invent mapping. Preserve execution-history/ingest gates regardless of snapshot success.
 
     Capture only public instrument/query market, counts, currency, observed delay classification, acquisition/check time, accepted status and sanitized success/blocker. Use the backend result record for market activation status. Distinguish fixture wiring, actual visual pass, live provider acceptance, unsupported entitlement/market-hours limitations and CI. A blocked live prerequisite is reportable completion of the attempted verification task, not proof of live success; keep that market fail-closed and explicitly list what must change for acceptance. If browser automation cannot run, report the missing capability and leave VERIFY-02 pending rather than substituting screenshots from fixtures or treating a process check as sufficient.
 

@@ -243,16 +243,31 @@ export function stochastic(candles: CandleData[], kPeriod = 14, dPeriod = 3): St
 }
 
 // ── Volume Weighted Average Price ────────────────────────────
-export function vwap(candles: CandleData[]): IndicatorPoint[] {
+export function vwap(
+  candles: CandleData[],
+  requireReportedVolume = false,
+): IndicatorPoint[] {
+  if (
+    requireReportedVolume &&
+    candles.some(
+      (candle) =>
+        candle.volume === undefined ||
+        !Number.isFinite(candle.volume) ||
+        candle.volume < 0,
+    )
+  ) {
+    return [];
+  }
   const result: IndicatorPoint[] = [];
   let cumVolPrice = 0;
   let cumVol = 0;
 
   for (const c of candles) {
     const typicalPrice = (c.high + c.low + c.close) / 3;
-    const vol = c.volume || 1;
+    const vol = requireReportedVolume ? c.volume! : c.volume || 1;
     cumVolPrice += typicalPrice * vol;
     cumVol += vol;
+    if (cumVol === 0) continue;
     result.push({ time: c.time, value: cumVolPrice / cumVol });
   }
   return result;

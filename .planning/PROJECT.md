@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A local, read-only proof of connection between OpenCharts and the existing KB US Stock Trading Journal backend. The user selects the US or Korean market, types a ticker, and clicks 조회 to inspect an actual provider quote and daily price chart. This extends the existing OpenCharts checkout; it does not replace the journal UI.
+A local, read-only connection between the existing OpenCharts frontend and the KB US Stock Trading Journal backend. Keep the original App → TradingPage → ChartToolbar → ChartPanel layout, indicators and drawings. The user selects US/KR, enters a ticker through the existing native symbol controls and explicitly submits 조회 to inspect the KB quote and daily chart. Both demo and KB use the single index entry under a fixed startup mode; a separate lookup product is not the requested UI.
 
 ## Core Value
 
@@ -17,9 +17,10 @@ Show the requested instrument's provider data with truthful source, time and del
 
 ### Active
 
-- User-entered US and Korean tickers with explicit market selection, manual query and daily candles/current quote.
+- User-entered US and Korean tickers through the original OpenCharts controls, explicit market/account/query-market selection, manual query and daily candles/current quote in the original ChartPanel.
 - Reuse KB's server-owned authentication and read-only transport; arbitrary-symbol lookup must not require an existing trade subject.
-- Clear errors and missing/delayed/unknown data states; no fabricated quotes or OHLCV.
+- Preserve native layout, indicators and drawings while disabling demo initialization/feed, telemetry, every trading write and automatic data refresh in KB mode. Unprovided portfolio/depth data is unavailable, never fabricated.
+- Clear errors and missing/delayed/unknown data states; no fabricated quotes or OHLCV. Date-only candles retain calendar identity across the native numeric chart/drawing boundary.
 - Focused tests, actual local browser integration, independent review, and separate PRs for the two repositories until P0=0 and P1=0.
 
 ### Out of Scope
@@ -34,6 +35,7 @@ The user approved initialization from `docs/research/2026-09-19-kb-market-data-i
 
 ## Constraints
 
+- Latest user correction: retaining the existing OpenCharts frontend was always the intended product. The assistant's separate kb.html/custom lookup interpretation is superseded; reuse its reviewed client/proxy/fixtures, then remove its product entry/page/chart files.
 - Keep credentials, raw account numbers and provider payloads on the backend. Only normalized market data crosses the frontend API.
 - Preserve currency, Korean leading zeros, market identity, exchange time/date and nullable missing fields. Do not relabel DRAM's Cboe listing as Nasdaq; verify provider routing separately.
 - Query on explicit submission only. Bound provider requests, retries and returned bars.
@@ -58,10 +60,13 @@ The user approved initialization from `docs/research/2026-09-19-kb-market-data-i
 | Existing HTML as research input | User approved reuse rather than repeated broad research | Approved |
 | Two PRs with isolated worktrees | Separate code ownership and remote repositories | Approved |
 | ASTRA planning/review, SOL implementation | Explicit user model choice | Approved |
+| Original OpenCharts frontend with KB data | User corrected the assistant's standalone-page interpretation | Locked; supersedes the old D-05/entry choice |
 
 ## Evolution
 
 Update delivered requirement status only with current test/runtime evidence. Preserve unverified provider behavior as unverified; do not call simulated tests a live broker success.
+
+The completed 01-01 US/KR snapshot backend remains the accepted provider boundary. Current normal-browser US/KR success is existing evidence to preserve, but it does not verify the corrected native UI before implementation. The cause of the historical 503 remains unconfirmed; safe diagnostic additions and later success do not prove a retrospective cause. Preserve prior reviews/validation as dated history and do not rewrite them to imply native-UI acceptance.
 
 ---
 Last updated: 2026-09-19 after user-approved GSD initialization.

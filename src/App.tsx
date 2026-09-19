@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TradingPage } from "./pages/TradingPage.tsx";
 import { useAuthStore, useTradingStore } from "./services/store.tsx";
+import { isKbMode } from "./services/runtimeMode.ts";
 
 /**
  * OpenCharts entry point.
@@ -10,12 +11,13 @@ import { useAuthStore, useTradingStore } from "./services/store.tsx";
  * demo "login" seeds the local user/account and starts the market-data feed.
  */
 export function App() {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(isKbMode);
   const demoLogin = useAuthStore((s) => s.demoLogin);
   const loadSymbols = useTradingStore((s) => s.loadSymbols);
   const loadAccounts = useTradingStore((s) => s.loadAccounts);
 
   useEffect(() => {
+    if (isKbMode) return;
     let cancelled = false;
     async function boot() {
       await demoLogin();

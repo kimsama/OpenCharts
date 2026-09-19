@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
+import { isKbMode } from "./runtimeMode.ts";
 import { wsClient } from "./ws.ts";
 import type { Account, Order, Position, Symbol, User } from "./schemas.ts";
 
@@ -26,10 +27,10 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  accessToken: localStorage.getItem("access_token"),
-  refreshToken: localStorage.getItem("refresh_token"),
-  user: JSON.parse(localStorage.getItem("user") || "null"),
-  isDemo: localStorage.getItem("is_demo") === "true",
+  accessToken: isKbMode ? null : localStorage.getItem("access_token"),
+  refreshToken: isKbMode ? null : localStorage.getItem("refresh_token"),
+  user: isKbMode ? null : JSON.parse(localStorage.getItem("user") || "null"),
+  isDemo: !isKbMode && localStorage.getItem("is_demo") === "true",
   mfaPending: null,
 
   login: async (email, password) => {
@@ -60,6 +61,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   googleLogin: async (credential, firmSlug) => {
+    if (isKbMode) throw new ApiError("Unavailable in KB read-only mode.", 403);
     const BASE = import.meta.env.VITE_API_URL || "";
     const res = await fetch(`${BASE}/api/auth/google`, {
       method: "POST",
@@ -84,6 +86,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   demoLogin: async () => {
+    if (isKbMode) {
+      await api.demoLogin();
+      return;
+    }
     // Clear any stale account selection from a previous session
     localStorage.removeItem("active_account");
     // Force dark mode for demo
@@ -124,6 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    if (isKbMode) return;
     // AUTH-VULN-06/07: Send refresh token to server for proper revocation
     const rt = localStorage.getItem("refresh_token");
     api.logout(rt || undefined).catch(() => {});
@@ -137,6 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   restoreSession: async () => {
+    if (isKbMode) throw new ApiError("Unavailable in KB read-only mode.", 403);
     const token = localStorage.getItem("access_token");
     if (!token) return;
     const rt = localStorage.getItem("refresh_token");
@@ -324,12 +332,12 @@ interface TradingState {
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
-  activeAccountId: localStorage.getItem("active_account"),
+  activeAccountId: isKbMode ? null : localStorage.getItem("active_account"),
   accounts: [],
   positions: [],
   orders: [],
   symbols: [],
-  selectedSymbol: "BTCUSD",
+  selectedSymbol: isKbMode ? "" : "BTCUSD",
   ticks: {},
   liveTicks: {},
   liveCandleUpdates: {},
@@ -341,11 +349,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   replaySessionDate: null,
 
   setActiveAccount: (id) => {
+    if (isKbMode) return;
     localStorage.setItem("active_account", id);
     set({ activeAccountId: id });
   },
 
   loadAccounts: async () => {
+    if (isKbMode) return;
     const accounts = await api.getMyAccounts();
     set({ accounts });
     const currentId = get().activeAccountId;
@@ -368,6 +378,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   loadPositions: async () => {
+    if (isKbMode) return;
     const id = get().activeAccountId;
     if (!id) return;
     const positions = await api.getPositions(id);
@@ -375,6 +386,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   loadOrders: async () => {
+    if (isKbMode) return;
     const id = get().activeAccountId;
     if (!id) return;
     const orders = await api.getOrders(id);
@@ -382,11 +394,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   loadSymbols: async () => {
+    if (isKbMode) return;
     const symbols = await api.getSymbols();
     set({ symbols });
   },
 
   updateTick: (symbolName, bid, ask, timestamp) => {
+    if (isKbMode) return;
     // 1. Check pending buffer (same-frame dedup with timestamp awareness)
     const pending = _pendingTicks.get(symbolName);
     if (pending && pending.bid === bid && pending.ask === ask && pending.timestamp >= timestamp)
@@ -428,6 +442,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   updateLiveTick: (symbolName, bid, ask, timestamp) => {
+    if (isKbMode) return;
     const pending = _pendingLiveTicks.get(symbolName);
     if (pending && pending.bid === bid && pending.ask === ask && pending.timestamp >= timestamp)
       return;
@@ -464,6 +479,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   },
 
   updateCandleFromWs: (symbol, timeframe, bar) => {
+    if (isKbMode) return;
     const key = `${symbol}:${timeframe}`;
     set((state) => ({
       liveCandleUpdates: { ...state.liveCandleUpdates, [key]: bar },
@@ -476,8 +492,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         ? { selectedSymbol: symbol }
         : { selectedSymbol: symbol, liveCandleUpdates: {} },
     ),
-  setPositions: (positions) => set({ positions }),
-  setOrders: (orders) => set({ orders }),
+  setPositions: (positions) => {
+    if (!isKbMode) set({ positions });
+  },
+  setOrders: (orders) => {
+    if (!isKbMode) set({ orders });
+  },
   setReplaySessionDate: (date) => set({ replaySessionDate: date }),
 
   onReplayStateChanged: (action, opts) => {

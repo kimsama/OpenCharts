@@ -32,3 +32,19 @@ export function formattedDateAndTime(timestamp: number | undefined): [string, st
 
   return [formattedDate, formattedTime];
 }
+
+export function formatUtcTradingDate(timestampSeconds: number): string {
+  if (!Number.isFinite(timestampSeconds)) return "";
+  return new Date(timestampSeconds * 1000).toISOString().slice(0, 10);
+}
+
+export function formatUtcTradingDateTime(time: Time): [string, string] {
+  if (typeof time === "string") return [time, ""];
+  if (isBusinessDay(time)) {
+    return [
+      `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`,
+      "",
+    ];
+  }
+  return [formatUtcTradingDate(time), ""];
+}

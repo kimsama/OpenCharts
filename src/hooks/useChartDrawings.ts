@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DrawingLine } from "../pages/trading/constants";
 import { api } from "../services/api";
+import {
+  marketSnapshotDrawings,
+  type MarketSnapshotDrawingScope,
+} from "../services/marketSnapshotDrawings.ts";
 
 // One reversible mutation for the undo/redo stacks.
 type HistoryOp =
@@ -17,10 +21,15 @@ function sortByZ(list: DrawingLine[]): DrawingLine[] {
   return [...list].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
 }
 
-export function useChartDrawings(symbol: string, timeframe: string) {
+export function useChartDrawings(
+  symbol: string,
+  timeframe: string,
+  kbScope?: MarketSnapshotDrawingScope | null,
+) {
   const [drawings, setDrawings] = useState<DrawingLine[]>([]);
   const symbolRef = useRef(symbol);
   const timeframeRef = useRef(timeframe);
+  const kbScopeRef = useRef(kbScope);
   // Mirror of `drawings` so mutators can read current state synchronously
   // (needed to capture `before` snapshots for undo without stale closures).
   const drawingsRef = useRef<DrawingLine[]>([]);
@@ -30,6 +39,7 @@ export function useChartDrawings(symbol: string, timeframe: string) {
   useEffect(() => {
     symbolRef.current = symbol;
     timeframeRef.current = timeframe;
+    kbScopeRef.current = kbScope;
   });
 
   // Drawings load per symbol and are shared across timeframes (TradingView
@@ -40,8 +50,12 @@ export function useChartDrawings(symbol: string, timeframe: string) {
     drawingsRef.current = [];
     undoStackRef.current = [];
     redoStackRef.current = [];
-    api.chartDrawings
-      .list(symbol)
+    const load = kbScope === undefined
+      ? api.chartDrawings.list(symbol)
+      : kbScope === null
+        ? Promise.resolve([])
+        : marketSnapshotDrawings.list(kbScope);
+    load
       .then((data) => {
         if (cancelled) return;
         const sorted = sortByZ(data ?? []);
@@ -52,27 +66,39 @@ export function useChartDrawings(symbol: string, timeframe: string) {
     return () => {
       cancelled = true;
     };
-  }, [symbol]);
+  }, [symbol, kbScope]);
 
   // ── Primitive applies (state + ref mirror + server, no history) ──
 
   const applyAdd = useCallback((d: DrawingLine) => {
     drawingsRef.current = sortByZ([...drawingsRef.current, d]);
     setDrawings(drawingsRef.current);
-    api.chartDrawings.save(symbolRef.current, timeframeRef.current, d).catch(() => {});
+    const scope = kbScopeRef.current;
+    if (scope === undefined) {
+      api.chartDrawings.save(symbolRef.current, timeframeRef.current, d).catch(() => {});
+    } else if (scope !== null) {
+      marketSnapshotDrawings.save(scope, d).catch(() => {});
+    }
   }, []);
 
   // The drawings POST endpoint upserts by drawingId, so edits reuse save().
   const applyUpdate = useCallback((d: DrawingLine) => {
     drawingsRef.current = sortByZ(drawingsRef.current.map((x) => (x.id === d.id ? d : x)));
     setDrawings(drawingsRef.current);
-    api.chartDrawings.save(symbolRef.current, timeframeRef.current, d).catch(() => {});
+    const scope = kbScopeRef.current;
+    if (scope === undefined) {
+      api.chartDrawings.save(symbolRef.current, timeframeRef.current, d).catch(() => {});
+    } else if (scope !== null) {
+      marketSnapshotDrawings.save(scope, d).catch(() => {});
+    }
   }, []);
 
   const applyRemove = useCallback((id: string) => {
     drawingsRef.current = drawingsRef.current.filter((x) => x.id !== id);
     setDrawings(drawingsRef.current);
-    api.chartDrawings.remove(id).catch(() => {});
+    const scope = kbScopeRef.current;
+    if (scope === undefined) api.chartDrawings.remove(id).catch(() => {});
+    else if (scope !== null) marketSnapshotDrawings.remove(scope, id).catch(() => {});
   }, []);
 
   const pushHistory = useCallback((op: HistoryOp) => {
@@ -115,7 +141,9 @@ export function useChartDrawings(symbol: string, timeframe: string) {
     }
     drawingsRef.current = [];
     setDrawings([]);
-    api.chartDrawings.clear(symbolRef.current).catch(() => {});
+    const scope = kbScopeRef.current;
+    if (scope === undefined) api.chartDrawings.clear(symbolRef.current).catch(() => {});
+    else if (scope !== null) marketSnapshotDrawings.clear(scope).catch(() => {});
   }, [pushHistory]);
 
   // ── Undo / redo ──

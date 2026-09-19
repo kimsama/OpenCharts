@@ -1,0 +1,71 @@
+# Phase 1 Execution Log
+
+Execution owner: primary Astra orchestrator. Plan execution uses executing-plans with Sol workers and independent Astra spec/quality review. Current plan verification: passed, 0 blockers/0 warnings.
+
+## Task status
+
+| Plan/task | Owner | Status | Evidence |
+|---|---|---|---|
+| 01-01 task 1 — US backend tracer | backend_us_impl (Sol) | Complete: spec and quality P0=0/P1=0/P2=0 | a6d7325 resolves UUID P2; focused 252 baseline plus affected tracer/API/static checks; US live accepted |
+| 01-01 task 2 — KR backend extension | backend_kr_impl (Sol) | Complete: active US+KR; spec and quality P0=0/P1=0/P2=0 | e7f73c1; final API 23 and broker/coordinator 260 passed, full mypy 176 files clean; KOSPI live accepted |
+| 01-02 task 1 — connected UI and real HTTP fixture | frontend_impl (Sol) | Complete: spec and quality P0=0/P1=0/P2=0 | OC 67f437a + KB b7cd48e; unit/browser/build and baseline comparison evidence in 01-02-SUMMARY.md |
+| 01-03 task 1 — browser/live verification | frontend_impl (Sol) | Final verification and three owned evidence docs | Reuse accepted live and inspected visuals; no new broker calls |
+| 01-03 task 2 — two PRs and review loop | Not dispatched | Pending validation | — |
+
+## Verified baseline
+
+- OpenCharts: npm ci succeeded, 25/25 tests and build passed; lockfile unchanged. Pre-existing large bundle warning remains outside this task's claim.
+- KB: focused broker adapter/coordinator baseline 226/226 passed. Frontend existing locked dependencies installed with Node 24.12.0/npm 11.6.0 for later schema generation; lockfile unchanged.
+- Fork created: kimsama/OpenCharts. Original origin remains upstream; fork remote added. Milestone branch pushed at c089aec10b4bfa0aa310fd2cd05c52d383050bde. Phase branch is feat/kb-market-data-poc. Backend branch is feat/opencharts-market-data-poc, base dev at 0f2ab7b537c2db81f8a8a304ab5d8a98b86ad4b0.
+- GitHub fork has no Actions workflows and milestone branch is unprotected. Backend dev is unprotected; ruleset enumeration returned a plan/feature HTTP 403. Existing backend CI workflow remains authoritative for available Python/frontend/Windows checks; PR/CI outcomes are not yet available.
+
+## Live evidence
+
+- Initial read-only preflight found one eligible KB connection but a persisted `auth_quarantine_started_at` latch. No credential/provider call was made on that refused attempt.
+- The existing recovery wait (165 + 86,400 + 300 seconds) had elapsed. The orchestrator inspected the current persistence and CLI source and authorized the existing `recover-auth` command once as ordinary expiry-gated CAS recovery within the approved connection test. No forced clear, clock override, broker sync, credential changes or process termination occurred. Recovery exited 0 and the marker was absent.
+- A single bounded, coordinator-owned MU/NAS quote + daily candidate read succeeded at 2026-09-19T11:14:11.243803+00:00: both operations accepted status 0024, quote fields 3/3 present, 250 daily bars, USD, delayed/15, provider time/timezone unknown. Coordinator shutdown left the auth marker absent. No new live repeat is needed for unchanged code.
+- Independent Astra spec review accepted US at d804373 (P0=0/P1=0/P2=0), with fresh 17 HTTP and 50 adapter checks. US-only activation was committed at 60acce9f691dd725aa29a2bc73f100fc999ac775. Independent quality review found one UUID canonicalization P2, fixed at a6d7325 and re-reviewed. Both US reviews ended P0=0/P1=0/P2=0.
+- One KR candidate for 005930/KOSPI returned the sealed provider_invalid_response error. The preflight and post-close durable auth marker were absent. No retry occurred; the source gate remains US only. The KR owner is investigating the exact response-contract failure before any additional bounded probe or activation. Offline API and provider/coordinator checks do not establish live KR acceptance.
+- A separately controlled corrected-code recheck then succeeded: quote 3/3, 124 KRW bars (2026-03-23..2026-09-18), both operations 0024, descending provider order normalized ascending, and marker absent after close. Independent acceptance and promotion reviews passed; e7f73c1 activates US+KR. The first result above is historical; KOSDAQ live entitlement remains unverified.
+
+This narrowly replaces the plan's blanket operational instruction not to change quarantine with the source-supported, expiry-guarded recovery path. It does not weaken any runtime age/CAS/ownership check or change canonical trading evidence.
+
+## Delivery rule
+
+No dependent task advances until independent spec then quality review completes. During the PR loop original findings precede fixes, dispositions identify commits/tests, final current heads must have P0=0/P1=0 with P2 and check states reported. Both PRs remain open; no merge/cleanup is requested.
+
+Before the first public OpenCharts phase push, remove the personal-path defaults from unpublished intermediate history as well as the final diff. Preserve a local backup ref, confirm the phase branch has never been pushed and the worktree/index is clean, then prepare a clean phase commit on the approved milestone base. Verify its tree equals the reviewed final tree; only push the named phase branch, never the private backup ref. Historical task-review SHAs in these records describe local execution; actual PR review and CI must use the subsequently published SHA. No history rewrite has occurred yet.
+
+## Final validation document review — original findings before fixes
+
+At 5ec2261, independent Astra document spec review found P0=0/P1=0/P2=2. D-S1: the public validation report says environment variables are not read; evidence proves their values are not applied, while dotenv files are not read. Correct that precise distinction. D-S2: 01-VALIDATION.md uses a placeholder instead of the eleven repository-relative Python paths in the executed Ruff commands. Record the exact command scope and the two baseline TypeScript comparison SHAs. All substantive evidence mappings and pending PR state were accepted. No code or runtime test is required for these prose corrections.
+
+## User-reported live runtime error
+
+After normal backend and connected Vite startup/account-list checks passed, the user reported: "The market data connection is unavailable." This is the API's connection_unavailable message. The route groups missing/singular connection resolution and credential/lease access failures under that code. There are two listed accounts and one structurally eligible KB connection; whether the user selected an unbound account is not yet known. Backend owner is diagnosing without blind quote retry, recovery, sync, or ownership bypass. PR publication waits for this report to be addressed.
+
+At c2a7c61, document spec recheck passed P0/P1/P2=0. Independent quality review then reported D-Q1/P2: both validation documents omit the subsequently reported runtime lookup failure from their current limitations. Before publishing, add a dated sanitized note that startup/accounts succeeded but the manual lookup report and selected account/root cause are unresolved, with publication held. Preserve historical bounded live acceptance. Quality counts: P0=0/P1=0/P2=1; prose-only correction assigned to the existing owner.
+
+The user subsequently confirmed the first lookup failed with the default first account unchanged. This excludes the selectable unbound second account as the reported cause and supplies no evidence of an earlier user-triggered provider failure. Root's one normal-browser MU/NAS reproduction on that default bound account also returned 503 before quote/daily dispatch. New-lease acquisition diagnostics are the priority; an in-memory latch is not proven. Normal engine/session construction matches the successful harness. No server restart, force clear, broker sync, or quarantine recovery has been performed during this diagnosis.
+
+Sol committed bounded pre-provider diagnostics at KB 2f3d73f3edac495970a0b2e6112ee645c3d328bd (coordinator and focused tests only). The emitted event contains a fixed stage plus a small allowlisted claim/credential category; no identifiers, values, exception text or traceback. Nine regressions failed before logging and passed afterward; full coordinator 90 and snapshot API 23 tests plus Ruff/format/mypy passed. This is diagnosis support, not a claimed runtime fix. Independent spec/quality spot reviews precede any normal shutdown and isolated explicit recheck.
+
+Independent diagnostic spec and quality reviews passed P0/P1/P2=0. Our old Vite/backend exited normally and the owner marker was absent afterward. A separate isolated normal runtime then rendered actual MU/NAS (250 USD bars, delayed15) and 005930/KOSPI (124 KRW bars, unknown delay) in controlled browser requests, with zero console errors and zero failure-stage events. The old503 cause remains unconfirmed. Backend evidence is preserved through b0d4c8a; no recovery, forced clear or sync was used.
+
+## Latest user correction — native frontend is the intended product
+
+The user clarified that the original OpenCharts frontend must be used to show the selected stock, rather than a separate page. This supersedes the assistant's standalone-entry design choice. No PR has been opened, no phase history rewrite or public feature push has occurred. Backend APIs and verified contracts remain reusable. The final product must use the existing App → TradingPage → ChartToolbar → ChartPanel flow, retaining native chart tools/indicators/drawings/layout with KB account/market/symbol selection and read-only data. kb.html, kb-main, MarketLookupPage and MarketSnapshotChart are superseded prototype artifacts and must leave the final product diff.
+
+Astra planner is revising canonical scope and bounded active plans; Sol mapped native data flow, and Astra mapped bootstrap/telemetry/order guards and local annotation persistence. No native implementation starts until revised plan verification passes. Historical standalone tests and live records remain evidence of the backend/prototype path, not proof of native frontend completion. The original two-PR and current-HEAD P0/P1/CI delivery objective remains in force.
+
+Native replanning completed at 82a18b2. Independent Astra plan check ended with zero blockers/warnings after correcting a head/base wording ambiguity; structure, 19 cwd/failure checks, 8 decision mappings and 20 gap mappings passed. Active follow-ups are 01-04/05/06/07. Our prototype frontend was stopped normally; the accepted real backend and unrelated original application remain running. Sol is executing 01-04. Initial native module/bootstrap RED cases became GREEN (7 tests); whole-task automatic-query/UI guards and independent task reviews remain pending.
+
+01-04 completed at 02e227a after eleven focused tests and a passing production build. Independent spec found two P2s (direct auth-store effects and currency-bearing calendar queries); both were corrected and re-reviewed. Final spec and whole-task quality each returned P0/P1/P2=0. TypeScript remains the existing 151-diagnostic baseline. Root refreshed the ignored local Graft graph; its generated untracked .ignore is tool metadata and must not be staged. Sol is now executing 01-05's thirteen native data/chart/drawing paths; no native browser/live completion is claimed yet.
+
+01-05 completed at 4b6b256 after the focused 48-test suite and production build passed. Original spec findings and the quality timeframe-preference finding were recorded before remediation; independent final spec and quality both returned P0/P1/P2=0. Native controls, calendar coordinates, truthful missing volume, indicator lifecycle and tuple-scoped drawing persistence are accepted at component level. TypeScript retains its 151 existing diagnostics. Sol is executing 01-06 cleanup and actual native browser checks against the isolated fixture; the real backend is untouched and no native live success or PR is claimed yet.
+
+01-06 scoped fixture deviation: existing provider fixtures contain September dates only, so they cannot prove the required actual-browser New York DST case. The backend Sol owner is assigned a fixture-only deterministic clock/data adjustment and its isolation/contract tests, keeping production validation and the real runtime unchanged. March DST dates and original September dates cannot share the KR 180-day window; the fixture clock and all positive fixture dates must be consistent. The frontend owner continues independent entry/test work and consumes the reviewed fixture result. This is test evidence work, not expanded provider capability.
+
+01-06 first native HTTP browser RED exposed two integration defects before remediation: saving a local chart template logs React's cross-component update-during-render error (ChartTemplatesMenu while TradingPage renders); enabling the OHLCV Tooltip logs that its chart element must be positioned relative or absolute. Data/SMA/template interactions reached the console gate with no forbidden requests. Root assigned the same Sol owner a minimal correction in the affected native template/chart paths and existing tests, preserving the console assertion. These additions must receive independent spec/quality review with 01-06. Browser execution pauses for the fixture's own spec/quality acceptance; no production provider call occurred.
+
+01-06 is complete at a707c186 after native unit61, actual HTTP/browser6, both single-entry builds and an exact unchanged TypeScript-baseline comparison. Root inspected desktop/mobile/tool/date artifacts. Original UI/telemetry/date-evidence findings were recorded before fixes; final independent spec and quality both report P0/P1/P2=0 across the fifteen-file task range. The obsolete standalone product is removed. Root releases the existing backend owner to start only our native frontend and perform the bounded normal US/KR checks in01-07; no reset/recovery/sync or extra provider operation is authorized.

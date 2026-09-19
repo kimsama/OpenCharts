@@ -33,6 +33,15 @@ import {
 } from "../services/queries.ts";
 import type { Order, PlaceOrderInput, Position, Symbol } from "../services/schemas.ts";
 import { useTradingStore } from "../services/store.tsx";
+import { isKbMode } from "../services/runtimeMode.ts";
+import {
+  fetchMarketAccounts,
+  fetchMarketSnapshot,
+  MarketSnapshotError,
+  type MarketAccountList,
+  type MarketSnapshot,
+  type MarketSnapshotIdentity,
+} from "../services/marketSnapshot.ts";
 import { toast } from "../services/toast.ts";
 import { AiTraderPanel } from "./AiTraderPage.tsx";
 import { BottomPanel } from "./trading/BottomPanel.tsx";
@@ -51,7 +60,12 @@ import { OrderPanel } from "./trading/OrderPanel.tsx";
 import { ReplayScrubber } from "./trading/ReplayScrubber.tsx";
 import { useReplayChartData } from "./trading/useReplayChartData.ts";
 import { useReplayPlayback } from "./trading/useReplayPlayback.ts";
-import { getPipDigits } from "./trading/utils.ts";
+import {
+  getPipDigits,
+  snapshotBarsToNativeCandles,
+  snapshotPriceDigits,
+  type ManualDailyCandle,
+} from "./trading/utils.ts";
 import { WatchlistPanel } from "./trading/WatchlistPanel.tsx";
 
 type ErrorWithMessage = { message?: string };
@@ -98,11 +112,13 @@ export function TradingPage() {
   } = useTradingStore();
   // Chart timeframe persistence (#8)
   const [timeframe, setTimeframe] = useState<Timeframe>(() => {
+    if (isKbMode) return "1d";
     const saved = localStorage.getItem(`tf_${selectedSymbol}`);
     return saved && TIMEFRAMES.includes(saved as Timeframe) ? (saved as Timeframe) : "15m";
   });
   const handleTimeframeChange = useCallback(
     (tf: Timeframe) => {
+      if (isKbMode) return;
       setTimeframe(tf);
       localStorage.setItem(`tf_${selectedSymbol}`, tf);
     },
@@ -110,6 +126,10 @@ export function TradingPage() {
   );
   // Restore timeframe when symbol changes
   useEffect(() => {
+    if (isKbMode) {
+      setTimeframe("1d");
+      return;
+    }
     const saved = localStorage.getItem(`tf_${selectedSymbol}`);
     if (saved && TIMEFRAMES.includes(saved as Timeframe)) setTimeframe(saved as Timeframe);
   }, [selectedSymbol]);
@@ -117,6 +137,8 @@ export function TradingPage() {
   const [activeIndicators, setActiveIndicators] = useState<IndicatorType[]>([]);
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
+  const [kbSubmittedIdentity, setKbSubmittedIdentity] =
+    useState<MarketSnapshotIdentity | null>(null);
   const {
     drawings,
     addDrawing,
@@ -125,17 +147,24 @@ export function TradingPage() {
     clearDrawings,
     undo: undoDrawing,
     redo: redoDrawing,
-  } = useChartDrawings(selectedSymbol, timeframe);
+  } = useChartDrawings(
+    selectedSymbol,
+    timeframe,
+    isKbMode ? kbSubmittedIdentity : undefined,
+  );
   const [activePlugins, setActivePlugins] = useState<string[]>(
     () => getChartPreferencesFromStorage().activePlugins,
   );
-  const handleTogglePlugin = useCallback((id: string) => {
-    setActivePlugins((prev) => {
-      const next = prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id];
+  const handleTogglePlugin = useCallback(
+    (id: string) => {
+      const next = activePlugins.includes(id)
+        ? activePlugins.filter((plugin) => plugin !== id)
+        : [...activePlugins, id];
+      setActivePlugins(next);
       updateChartPreferences({ activePlugins: next });
-      return next;
-    });
-  }, []);
+    },
+    [activePlugins],
+  );
   // Template load — replace the whole plugin list at once.
   const handleSetPlugins = useCallback((ids: string[]) => {
     setActivePlugins(ids);
@@ -221,10 +250,131 @@ export function TradingPage() {
   const queryClient = useQueryClient();
   const { data: symbols = [] } = useSymbols();
   const isFeedConnected = useIsFeedConnected();
+  const [kbAccounts, setKbAccounts] = useState<MarketAccountList["accounts"]>([]);
+  const [kbAccountId, setKbAccountId] = useState("");
+  const [kbMarket, setKbMarket] = useState<MarketSnapshotIdentity["market"]>("US");
+  const [kbQueryMarket, setKbQueryMarket] =
+    useState<MarketSnapshotIdentity["query_market"]>("NAS");
+  const [kbTicker, setKbTicker] = useState("");
+  const [kbSnapshot, setKbSnapshot] = useState<MarketSnapshot | null>(null);
+  const [kbCandles, setKbCandles] = useState<ManualDailyCandle[]>([]);
+  const [kbPipDigits, setKbPipDigits] = useState(0);
+  const [kbStatus, setKbStatus] = useState("");
+  const [kbError, setKbError] = useState("");
+  const [kbPending, setKbPending] = useState(false);
+  const kbRequestSequence = useRef(0);
+  const kbRequestController = useRef<AbortController | null>(null);
+  const kbPendingKey = useRef("");
+
+  useEffect(() => {
+    if (!isKbMode) return;
+    const controller = new AbortController();
+    fetchMarketAccounts(controller.signal)
+      .then((value) => {
+        if (controller.signal.aborted) return;
+        setKbAccounts(value.accounts);
+        setKbAccountId(value.accounts.find((account) => account.status === "active")?.id ?? "");
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setKbError(kbErrorText(error));
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(
+    () => () => {
+      kbRequestSequence.current += 1;
+      kbRequestController.current?.abort();
+    },
+    [],
+  );
+
+  const invalidateKbResult = useCallback(() => {
+    kbRequestSequence.current += 1;
+    kbRequestController.current?.abort();
+    kbRequestController.current = null;
+    kbPendingKey.current = "";
+    setKbSnapshot(null);
+    setKbCandles([]);
+    setKbPipDigits(0);
+    setKbSubmittedIdentity(null);
+    setKbStatus("");
+    setKbError("");
+    setKbPending(false);
+    setSelectedSymbol("");
+  }, [setSelectedSymbol]);
+
+  const submitKbSnapshot = useCallback(async () => {
+    const symbol = kbTicker.trim().toUpperCase();
+    const validationError = validateKbInput(kbAccountId, kbMarket, kbQueryMarket, symbol);
+    if (validationError) {
+      invalidateKbResult();
+      setKbError(validationError);
+      return;
+    }
+    const identity: MarketSnapshotIdentity = {
+      account_id: kbAccountId,
+      market: kbMarket,
+      query_market: kbQueryMarket,
+      symbol,
+    };
+    const key = kbIdentityKey(identity);
+    if (kbPendingKey.current === key) return;
+    kbRequestController.current?.abort();
+    const controller = new AbortController();
+    const sequence = kbRequestSequence.current + 1;
+    kbRequestSequence.current = sequence;
+    kbRequestController.current = controller;
+    kbPendingKey.current = key;
+    setKbSnapshot(null);
+    setKbCandles([]);
+    setKbPipDigits(0);
+    setKbSubmittedIdentity(null);
+    setKbError("");
+    setKbStatus(`${symbol} 조회 중`);
+    setKbPending(true);
+    setSelectedSymbol(symbol);
+    setTimeframe("1d");
+    try {
+      const snapshot = await fetchMarketSnapshot(identity, controller.signal);
+      if (kbRequestSequence.current !== sequence) return;
+      const nativeCandles = snapshotBarsToNativeCandles(snapshot.bars);
+      const priceDigits = snapshotPriceDigits([
+        snapshot.quote.last,
+        snapshot.quote.bid,
+        snapshot.quote.ask,
+        ...snapshot.bars.flatMap((bar) => [bar.open, bar.high, bar.low, bar.close]),
+      ]);
+      setKbCandles(nativeCandles);
+      setKbPipDigits(priceDigits);
+      setKbSnapshot(snapshot);
+      setKbSubmittedIdentity(identity);
+      setKbStatus(`${symbol} 조회 완료`);
+    } catch (error) {
+      if (kbRequestSequence.current !== sequence || controller.signal.aborted) return;
+      setKbError(kbErrorText(error));
+      setKbStatus("");
+    } finally {
+      if (kbRequestSequence.current === sequence) {
+        setKbPending(false);
+        kbPendingKey.current = "";
+        kbRequestController.current = null;
+      }
+    }
+  }, [
+    kbTicker,
+    kbAccountId,
+    kbMarket,
+    kbQueryMarket,
+    invalidateKbResult,
+    setSelectedSymbol,
+  ]);
+
 
   // Prime the active symbol with a fresh server-side snapshot immediately on
   // symbol switch so bid/ask appears without waiting for the next WS tick.
   useEffect(() => {
+    if (isKbMode) return;
     let cancelled = false;
     void api
       .getTick(selectedSymbol)
@@ -287,6 +437,7 @@ export function TradingPage() {
   // place an order directly.
   const handleQuickOrder = useCallback(
     (side: "BUY" | "SELL", type: "LIMIT" | "STOP", price: number) => {
+      if (isKbMode) return;
       if (!activeAccountId) {
         toast.warning("No Account", "Select an account before placing orders");
         return;
@@ -348,6 +499,7 @@ export function TradingPage() {
   }, []);
   const [candleLimit, setCandleLimit] = useState(firstPaintCandleLimit);
   useEffect(() => {
+    if (isKbMode) return;
     setCandleLimit(firstPaintCandleLimit);
     // Wait long enough for the first-paint response to arrive and render
     // before firing the heavier deep-history request. 400 ms is a reasonable
@@ -408,12 +560,18 @@ export function TradingPage() {
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── Mobile Account Bar (small screens only) ────── */}
       <div className="md:hidden">
-        <MobileAccountBar
-          balance={account?.balance ?? 0}
-          equity={account?.equity ?? account?.balance ?? 0}
-          margin={account?.margin ?? 0}
-          pnl={positionPnl}
-        />
+        {isKbMode ? (
+          <div className="border-b border-border bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+            KB read-only mode · Portfolio unavailable
+          </div>
+        ) : (
+          <MobileAccountBar
+            balance={account?.balance ?? 0}
+            equity={account?.equity ?? account?.balance ?? 0}
+            margin={account?.margin ?? 0}
+            pnl={positionPnl}
+          />
+        )}
       </div>
 
       {/* ── Top Toolbar ──────────────────────────────────── */}
@@ -439,11 +597,11 @@ export function TradingPage() {
         onRightPanel={setRightPanel}
         showRightPanel={showRightPanel}
         onToggleRightPanel={() => setShowRightPanel((v) => !v)}
-        tick={tick}
-        symbolInfo={symbolInfo}
-        aiTraderEnabled={aiTraderEnabled?.enabled ?? false}
+        tick={isKbMode ? undefined : tick}
+        symbolInfo={isKbMode ? undefined : symbolInfo}
+        aiTraderEnabled={isKbMode ? false : (aiTraderEnabled?.enabled ?? false)}
         isReplaying={isReplaying}
-        replayAccountId={activeAccountId}
+        replayAccountId={isKbMode ? null : activeAccountId}
         activePlugins={activePlugins}
         onTogglePlugin={handleTogglePlugin}
         onSetIndicators={setActiveIndicators}
@@ -454,9 +612,39 @@ export function TradingPage() {
         onToggleStayInDrawingMode={() =>
           updateChartPreferences({ stayInDrawingMode: !chartPrefs.stayInDrawingMode })
         }
+        kbManual={
+          isKbMode
+            ? {
+                accounts: kbAccounts,
+                accountId: kbAccountId,
+                market: kbMarket,
+                queryMarket: kbQueryMarket,
+                ticker: kbTicker,
+                pending: kbPending,
+                status: kbStatus,
+                error: kbError,
+                onAccountChange: (value) => {
+                  invalidateKbResult();
+                  setKbAccountId(value);
+                },
+                onMarketChange: (value) => {
+                  invalidateKbResult();
+                  setKbMarket(value);
+                  setKbQueryMarket(value === "US" ? "NAS" : "KOSPI");
+                  setKbTicker("");
+                },
+                onQueryMarketChange: (value) => {
+                  invalidateKbResult();
+                  setKbQueryMarket(value);
+                },
+                onTickerChange: setKbTicker,
+                onSubmit: () => void submitKbSnapshot(),
+              }
+            : undefined
+        }
       />
 
-      <MarketClosedBanner symbolInfo={symbolInfo} />
+      {!isKbMode && <MarketClosedBanner symbolInfo={symbolInfo} />}
 
       {/* ── Main Layout ──────────────────────────────────── */}
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
@@ -465,7 +653,7 @@ export function TradingPage() {
           {/* Chart Area */}
           <div className="flex-1 min-h-[200px] relative">
             <ChartPanel
-              candles={replayCandles ?? candles}
+              candles={isKbMode ? kbCandles : (replayCandles ?? candles)}
               selectedSymbol={selectedSymbol}
               timeframe={replayCandles ? "1m" : timeframe}
               isDark={isDark}
@@ -481,20 +669,23 @@ export function TradingPage() {
               onRedoDrawing={redoDrawing}
               magnetMode={chartPrefs.magnetMode}
               stayInDrawingMode={chartPrefs.stayInDrawingMode}
-              positions={chartPositions}
-              orders={chartOrders}
-              tick={replayCandles ? undefined : tick}
-              liveCandle={replayCandles ? undefined : liveCandle}
-              pipDigits={pipDigits}
+              positions={isKbMode ? [] : chartPositions}
+              orders={isKbMode ? [] : chartOrders}
+              tick={isKbMode || replayCandles ? undefined : tick}
+              liveCandle={isKbMode || replayCandles ? undefined : liveCandle}
+              pipDigits={isKbMode ? kbPipDigits : pipDigits}
               symbolInfo={symbolInfo}
-              onModifyPosition={handleChartModifyPosition}
+              onModifyPosition={isKbMode ? undefined : handleChartModifyPosition}
               replayTradeEvents={replayTradeEvents}
               isReplaying={isReplaying}
+              dataMode={isKbMode ? "manual-daily" : "streaming"}
+              dataIdentityKey={kbSnapshot ? kbIdentityKey(kbSnapshot) : undefined}
+              manualSnapshot={isKbMode ? kbSnapshot : undefined}
               activePlugins={activePlugins}
               onTogglePlugin={handleTogglePlugin}
-              accountEquity={account?.equity ?? account?.balance ?? 0}
-              accountId={activeAccountId}
-              onQuickOrder={handleQuickOrder}
+              accountEquity={isKbMode ? 0 : (account?.equity ?? account?.balance ?? 0)}
+              accountId={isKbMode ? null : activeAccountId}
+              onQuickOrder={isKbMode ? undefined : handleQuickOrder}
               onClearDrawings={clearDrawings}
               onClearIndicators={handleClearIndicators}
             />
@@ -515,6 +706,13 @@ export function TradingPage() {
           </div>
 
           {/* Bottom Panel (Positions / Orders / Journal / Calendar / News) */}
+          {isKbMode ? (
+            <ReadOnlyUnavailable
+              height={bottomPanelHeight}
+              title="Trading activity unavailable"
+              detail="Positions, orders and journal activity are disabled in KB read-only mode."
+            />
+          ) : (
           <BottomPanel
             tab={bottomTab}
             onTabChange={setBottomTab}
@@ -558,12 +756,18 @@ export function TradingPage() {
               )
             }
           />
+          )}
         </div>
 
         {/* Right Panel */}
         {showRightPanel && (
           <div className="hidden md:flex w-full md:w-[280px] xl:w-[320px] border-t md:border-t-0 md:border-l border-border flex-col bg-card overflow-hidden shrink-0 md:max-h-none">
-            {rightPanel === "order" && (
+            {isKbMode ? (
+              <ReadOnlyUnavailable
+                title="Panel unavailable"
+                detail="Order entry, market depth, portfolio and AI trading are disabled in KB read-only mode."
+              />
+            ) : rightPanel === "order" ? (
               <OrderPanel
                 symbol={selectedSymbol}
                 symbolInfo={symbolInfo}
@@ -581,9 +785,9 @@ export function TradingPage() {
                   handleFirstTrade();
                 }}
               />
-            )}
-            {rightPanel === "dom" && <DOMPanel symbol={selectedSymbol} tick={tick} />}
-            {rightPanel === "watchlist" && (
+            ) : null}
+            {!isKbMode && rightPanel === "dom" && <DOMPanel symbol={selectedSymbol} tick={tick} />}
+            {!isKbMode && rightPanel === "watchlist" && (
               <WatchlistPanel
                 symbols={symbols}
                 ticks={ticks}
@@ -594,17 +798,17 @@ export function TradingPage() {
                 isFeedConnected={isFeedConnected}
               />
             )}
-            {rightPanel === "news" && (
+            {!isKbMode && rightPanel === "news" && (
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 <MarketNewsFeed symbol={selectedSymbol} />
               </div>
             )}
-            {rightPanel === "ai-trader" && (
+            {!isKbMode && rightPanel === "ai-trader" && (
               <div className="flex-1 overflow-hidden">
                 <AiTraderPanel accountId={activeAccountId} />
               </div>
             )}
-            {rightPanel === "tv-analysis" && (
+            {!isKbMode && rightPanel === "tv-analysis" && (
               <div className="flex-1 overflow-hidden">
                 <TradingViewTechnicalAnalysis
                   symbol={selectedSymbol}
@@ -620,7 +824,7 @@ export function TradingPage() {
       </div>
 
       {/* ── Mobile Trading Panel (small screens only) ──── */}
-      <div className="md:hidden">
+      {!isKbMode && <div className="md:hidden">
         {!mobilePanelOpen && (
           <button
             onClick={() => setMobilePanelOpen(true)}
@@ -660,9 +864,10 @@ export function TradingPage() {
             />
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Dialogs */}
+      {!isKbMode && <>
       <PositionModifyDialog
         position={modifyingPosition}
         onClose={() => setModifyingPosition(null)}
@@ -699,6 +904,63 @@ export function TradingPage() {
         symbolInfo={symbolInfo}
         loading={confirmLoading}
       />
+      </>}
     </div>
   );
+}
+
+function ReadOnlyUnavailable({
+  title,
+  detail,
+  height,
+}: {
+  title: string;
+  detail: string;
+  height?: number;
+}) {
+  return (
+    <section
+      className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 border-border bg-card px-4 text-center"
+      style={height === undefined ? undefined : { height }}
+      aria-label={title}
+    >
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-md text-xs text-muted-foreground">{detail}</p>
+    </section>
+  );
+}
+
+function kbIdentityKey(identity: MarketSnapshotIdentity): string {
+  return `${identity.account_id}:${identity.market}:${identity.query_market}:${identity.symbol}`;
+}
+
+function validateKbInput(
+  accountId: string,
+  market: MarketSnapshotIdentity["market"],
+  queryMarket: MarketSnapshotIdentity["query_market"],
+  symbol: string,
+): string {
+  if (!accountId) return "조회할 계좌를 선택해 주세요.";
+  const routeMatches =
+    market === "US"
+      ? queryMarket === "NAS" || queryMarket === "NYS" || queryMarket === "AMX"
+      : queryMarket === "KOSPI" || queryMarket === "KOSDAQ";
+  if (!routeMatches) return "조회 시장을 다시 선택해 주세요.";
+  if (market === "KR" && !/^\d{6}$/.test(symbol)) {
+    return "국내 종목 코드는 앞자리 0을 포함한 6자리 숫자여야 합니다.";
+  }
+  if (market === "US" && !/^[A-Z0-9][A-Z0-9.-]{0,11}$/.test(symbol)) {
+    return "미국 종목 코드를 1~12자의 영문, 숫자, 점 또는 하이픈으로 입력해 주세요.";
+  }
+  return "";
+}
+
+function kbErrorText(error: unknown): string {
+  if (error instanceof MarketSnapshotError) {
+    if (error.code === "provider_contract_unverified") return "선택한 시장은 아직 활성화되지 않았습니다.";
+    if (error.code === "no_data") return "해당 종목의 시장 데이터가 없습니다.";
+    if (error.code === "provider_timeout") return "시장 데이터 제공자가 응답하지 않았습니다.";
+    return error.message;
+  }
+  return "시장 데이터를 불러오지 못했습니다.";
 }

@@ -82,6 +82,7 @@ export interface TooltipPrimitiveOptions {
   lineColor: string;
   tooltip?: Partial<TooltipOptions>;
   priceExtractor: <T extends WhitespaceData>(dataPoint: T) => string;
+  dateFormatter?: (time: Time) => [string, string];
 }
 
 export class TooltipPrimitive implements ISeriesPrimitive<Time> {
@@ -218,7 +219,9 @@ export class TooltipPrimitive implements ISeriesPrimitive<Time> {
     }
     const price = this._options.priceExtractor(data);
     const coordinate = chart.timeScale().logicalToCoordinate(logical);
-    const [date, time] = formattedDateAndTime(param.time ? convertTime(param.time) : undefined);
+    const [date, time] = param.time && this._options.dateFormatter
+      ? this._options.dateFormatter(param.time)
+      : formattedDateAndTime(param.time ? convertTime(param.time) : undefined);
     if (this._tooltip) {
       const tooltipOptions = this._tooltip.options();
       const topMargin = tooltipOptions.followMode == "top" ? tooltipOptions.topOffset + 10 : 0;

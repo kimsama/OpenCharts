@@ -1,21 +1,18 @@
 /**
- * Demo WebSocket client.
+ * Runtime WebSocket client.
  *
- * OpenCharts ships without a backend, so this replaces the real reconnecting
- * WebSocket with an in-process client backed by the demo event bus + feed
- * (services/demo). It exposes the same public surface the app already uses
- * (connect / subscribe / subscribeAccounts / onStateChange / state), so no
- * consumer (MarketDataBridge, ConnectionIndicator, store, …) had to change.
+ * Demo modules are loaded only after a demo-mode call. KB mode exposes the same
+ * inert public surface without evaluating or starting the demo bus/feed.
  */
-import { publish, subscribeChannel, type ChannelHandler } from "./demo/bus.ts";
-import { startDemoFeed } from "./demo/feed.ts";
+import { isKbMode } from "./runtimeMode";
 
 export type ConnectionState = "connected" | "connecting" | "reconnecting" | "disconnected";
-export type WsHandler = ChannelHandler;
+export type WsHandler = (event: unknown) => void;
 
-class DemoWsClient {
+class RuntimeWsClient {
   private _state: ConnectionState = "disconnected";
   private stateListeners = new Set<(s: ConnectionState) => void>();
+  private generation = 0;
 
   get state(): ConnectionState {
     return this._state;
@@ -27,14 +24,22 @@ class DemoWsClient {
   }
 
   connect(_token?: string): void {
+    if (isKbMode) return;
+    const generation = ++this.generation;
     this.setState("connecting");
-    startDemoFeed();
-    // Resolve to connected on the next tick so onStateChange subscribers
-    // registered synchronously after connect() still receive the transition.
-    setTimeout(() => this.setState("connected"), 0);
+    void import("./demo/feed.ts").then(({ startDemoFeed }) => {
+      if (generation !== this.generation || this._state === "disconnected") return;
+      startDemoFeed();
+      setTimeout(() => {
+        if (generation === this.generation && this._state !== "disconnected") {
+          this.setState("connected");
+        }
+      }, 0);
+    });
   }
 
   disconnect(): void {
+    this.generation += 1;
     this.setState("disconnected");
   }
 
@@ -43,7 +48,16 @@ class DemoWsClient {
   }
 
   subscribe(channel: string, handler: WsHandler): () => void {
-    return subscribeChannel(channel, handler);
+    if (isKbMode) return () => undefined;
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    void import("./demo/bus.ts").then(({ subscribeChannel }) => {
+      if (active) unsubscribe = subscribeChannel(channel, handler);
+    });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
   }
 
   subscribeAccounts(_accountIds: string[]): void {
@@ -64,8 +78,9 @@ class DemoWsClient {
 
   /** Allow the engine/feed to push events through the same client (parity helper). */
   emit(channel: string, event: unknown): void {
-    publish(channel, event);
+    if (isKbMode) return;
+    void import("./demo/bus.ts").then(({ publish }) => publish(channel, event));
   }
 }
 
-export const wsClient = new DemoWsClient();
+export const wsClient = new RuntimeWsClient();
