@@ -1,13 +1,12 @@
 /**
- * Demo API facade.
+ * Runtime API facade.
  *
- * OpenCharts runs without a backend: all real data the terminal needs is served
- * by the in-browser demo layer (services/demo). `api` is the demo implementation
- * wrapped in a Proxy whose fallback returns a benign async no-op for any method
- * not implemented in demo mode — so leftover calls from non-terminal code resolve
- * harmlessly instead of throwing network errors.
+ * Demo mode lazily loads the original in-browser implementation. KB mode never
+ * evaluates that module and rejects every legacy method at this shared boundary.
  */
-import { demoApi } from "./demo/api.ts";
+import { isKbMode } from "./runtimeMode";
+
+type DemoApi = typeof import("./demo/api.ts")["demoApi"];
 
 export const API_BASE = "";
 
@@ -22,10 +21,49 @@ export class ApiError extends Error {
 
 // react-query rejects `undefined` query results, so resolve to null instead.
 const benign = () => Promise.resolve(null);
+const unavailable = () =>
+  Promise.reject(new ApiError("Unavailable in KB read-only mode.", 403));
+const kbLocalChartDrawings = {
+  list: async () => [],
+  save: async () => ({ saved: true }),
+  remove: async () => ({ deleted: true }),
+  clear: async () => ({ cleared: true }),
+};
 
-export const api = new Proxy(demoApi as Record<string, unknown>, {
-  get(target, prop: string) {
-    if (prop in target) return target[prop];
-    return benign;
+let demoApiPromise: Promise<Record<string, unknown>> | undefined;
+function loadDemoApi(): Promise<Record<string, unknown>> {
+  demoApiPromise ??= import("./demo/api.ts").then(
+    ({ demoApi }) => demoApi as Record<string, unknown>,
+  );
+  return demoApiPromise;
+}
+const demoChartDrawings: DemoApi["chartDrawings"] = {
+  list: (...args) =>
+    loadDemoApi().then((implementation) =>
+      (implementation.chartDrawings as DemoApi["chartDrawings"]).list(...args),
+    ),
+  save: (...args) =>
+    loadDemoApi().then((implementation) =>
+      (implementation.chartDrawings as DemoApi["chartDrawings"]).save(...args),
+    ),
+  remove: (...args) =>
+    loadDemoApi().then((implementation) =>
+      (implementation.chartDrawings as DemoApi["chartDrawings"]).remove(...args),
+    ),
+  clear: (...args) =>
+    loadDemoApi().then((implementation) =>
+      (implementation.chartDrawings as DemoApi["chartDrawings"]).clear(...args),
+    ),
+};
+
+export const api = new Proxy({} as Record<string, unknown>, {
+  get(_target, prop: string) {
+    if (isKbMode) return prop === "chartDrawings" ? kbLocalChartDrawings : unavailable;
+    if (prop === "chartDrawings") return demoChartDrawings;
+    return (...args: unknown[]) =>
+      loadDemoApi().then((implementation) => {
+        const method = implementation[prop];
+        return typeof method === "function" ? method(...args) : benign();
+      });
   },
-}) as typeof demoApi & Record<string, (...args: never[]) => Promise<unknown>>;
+}) as DemoApi & Record<string, (...args: never[]) => Promise<unknown>>;

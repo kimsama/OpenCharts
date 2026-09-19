@@ -41,6 +41,7 @@ export interface TooltipPrimitiveOptions {
   priceExtractor: <T extends WhitespaceData>(dataPoint: T) => [number, string];
   showTime: boolean;
   topOffset: number;
+  dateFormatter?: (time: Time) => [string, string];
 }
 
 export interface ActiveRange {
@@ -218,7 +219,9 @@ export class DeltaTooltipPrimitive implements ISeriesPrimitive<Time> {
         const [priceValue, priceString] = this._options.priceExtractor(data);
         priceValues.push([priceValue, point.index]);
         const priceY = series.priceToCoordinate(priceValue) ?? -1000;
-        const [date, time] = formattedDateAndTime(data.time ? convertTime(data.time) : undefined);
+        const [date, time] = data.time && this._options.dateFormatter
+          ? this._options.dateFormatter(data.time)
+          : formattedDateAndTime(data.time ? convertTime(data.time) : undefined);
         const state: DeltaSingleTooltipData = {
           x: point.x,
           lineContent: [priceString, date],

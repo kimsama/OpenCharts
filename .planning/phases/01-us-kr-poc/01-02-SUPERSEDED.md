@@ -1,6 +1,8 @@
 ---
 phase: 01-us-kr-poc
 plan: "02"
+status: superseded
+superseded_by: ["01-04", "01-05", "01-06"]
 type: execute
 wave: 2
 depends_on: ["01-01"]
@@ -78,6 +80,7 @@ must_haves:
 ---
 
 <objective>
+HISTORICAL ONLY: the user corrected the assistant's separate-page interpretation. This plan is superseded by the native OpenCharts plans 01-04 through 01-06. Its original implementation/review records remain dated evidence, not acceptance of the corrected UI.
 검토된 01-01 backend를 재사용하여 D-01부터 D-06의 US/KR 수동 조회 화면과 차트를 연결한다. 두 시장은 동일 DTO/컴포넌트의 선택값이므로 한 frontend task에서 함께 구현·검증하고 독립 리뷰한다. 01-01의 실제 API tracer 위에 브라우저 경로를 확장하며 기능 축소 없이 전체 입력/오류/접근성 경계를 완료한다.
 </objective>
 

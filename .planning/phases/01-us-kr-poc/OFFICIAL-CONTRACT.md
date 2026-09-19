@@ -11,7 +11,9 @@ Date: 2026-09-19. Evidence: publicly downloadable KB API schema and example JSON
 | KR quote IVU10070 | POST /api/v1/ivu10070 | is_cd exact 6-digit string, ovtm_mkt_clsf=0 (regular only) | now_prc, b1_aprc, s1_aprc; no symbol echo/time/delay in official output schema |
 | KR daily IVS11560 | POST /api/v1/ivs11560 | is_cd, mkt_clsf 0=KOSPI/1=KOSDAQ, info_ccd=1 raw price, chrt_clsf=D, minute_tck_indx=일, bounded inq_cnt <=500, inq_clsf explicit below | out2 dt, opn_prc_p2, hgh_prc_p2, lw_prc_p2, cls_prc_p2, vlm; check echoed request fields |
 
-KR daily inq_clsf=1 is date-based (strt_dy=YYYYMMDD); 2 is record-count-based. Prefer a bounded record-count read if authoritative semantics and live POC confirm it; otherwise use the documented success-example date-based form with an explicit bounded date. Do not silently choose a date direction or pagination semantics. Both methods stay capped and fixed in server code, not client passthrough.
+KR daily inq_clsf=1 is date-based (strt_dy=YYYYMMDD); 2 is record-count-based. Direct public-sample comparison on 2026-09-19 shows input strt_dy=20260601/inq_cnt=500 and output 15 rows from 20260601 through 20260622 with inq_cnt=15. This is evidence of a forward date window and a returned row count, not an echo of the requested cap. Use the documented date-based form with strt_dy set to the current Asia/Seoul calendar date minus 180 calendar days, inq_cnt=250, one request and no pagination. Validate dates inside that requested window and count equality with the returned rows (at most 250). Bounded live evidence must still confirm the intended recent series before activation.
+
+The same public example sends minute_tck_indx=일 but returns minute_tck_indx=1. Validate daily chrt_clsf=D and the observed normalized daily index 1; do not require literal request/response equality for that field. Identity and semantic echoes is_cd/mkt_clsf/chrt_clsf/inq_clsf/info_ccd must still match. A requested cap of 250 must not reject a valid shorter history simply because returned inq_cnt is smaller.
 
 ## Normalization constraints
 

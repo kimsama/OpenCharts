@@ -10,10 +10,16 @@ Full capability consideration; exclusions below are the user's approved read-onl
 | KR daily IVS11560 | INTEGRATE | Explicit KOSPI/KOSDAQ routing and date-based bounded candidate; verified semantics required before activation |
 | Retained KB authentication/credential binding | INTEGRATE | Reuse existing same-account coordinator lease, failure quarantine and manual-sync latch; no new auth flow |
 | Safe local account listing/selection | INTEGRATE | Existing GET accounts alias/opaque-ID projection; never list broker account identifiers |
-| Local account-scoped normalized snapshot | INTEGRATE | New read-only route through an exact loopback proxy allowlist |
+| Local account-scoped normalized snapshot | INTEGRATE | Completed reviewed backend and exact loopback proxy are reused by the original OpenCharts frontend |
+| Original native frontend layout/chart | INTEGRATE | Single index/App/TradingPage/ChartToolbar/ChartPanel in fixed startup demo or KB mode; standalone product removed |
+| Native local drawings/indicators/preferences | INTEGRATE | Preserve local interactivity and identity-scoped persistence without broker mutations; unavailable volume does not generate volume-derived values |
+| Native manual symbol/account/query-market controls | INTEGRATE | Extend existing list-only symbol surface with arbitrary explicit US/KR submission; KB account identity stays separate from demo trading accounts |
+| Native daily calendar-coordinate adaptation | INTEGRATE | Original date survives numeric chart/drawing mapping and Seoul/US tooltip/tick formatters; coordinate is never provider-as-of |
+| Standalone kb.html/custom lookup product | OPT-OUT | User corrected assistant interpretation; preserve only reusable client/proxy/fixtures |
 | Order placement/amendment/cancellation/execution | OPT-OUT | User explicitly excludes every broker order operation |
 | Execution history/fills/transaction ingestion | OPT-OUT | Existing separate evidence/activation gates stay unchanged; quote success cannot approve ingestion |
-| Holdings/balances/buying power/account financial information | OPT-OUT | User asks for public-instrument quotes/charts, not portfolio/broker account queries |
+| Holdings/balances/buying power/account financial information | OPT-OUT | Native panel layout may show unavailable/read-only status; no portfolio requests or synthetic values |
+| Order-book/depth simulation | OPT-OUT | Disable native randomized depth in KB mode; no fabricated depth or new provider endpoint |
 | Account creation/editing/credential registration UI | OPT-OUT | User explicitly chooses existing backend-owned binding and safe selector |
 | Independent token issue/revoke/credential fallback | OPT-OUT | Existing token owner handles its lifecycle; this POC adds no parallel auth implementation or account fallback |
 | Intraday/tick/weekly/monthly/adjusted chart modes | OPT-OUT | Explicit bounded daily raw-price slice only; no interval platform |

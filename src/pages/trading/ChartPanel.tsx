@@ -37,11 +37,13 @@ import { CrosshairHighlightPrimitive } from "../../lib/chart-plugins/highlight-b
 import { SessionBreaks } from "../../lib/chart-plugins/session-breaks/session-breaks.ts";
 import { SessionHighlighting } from "../../lib/chart-plugins/session-highlighting/session-highlighting.ts";
 import { TooltipPrimitive } from "../../lib/chart-plugins/tooltip/tooltip.ts";
-import type { IndicatorType } from "../../lib/indicators.ts";
+import { formatUtcTradingDateTime } from "../../lib/chart-plugins/helpers/time.ts";
+import type { CandleData, IndicatorType } from "../../lib/indicators.ts";
 import { cn } from "../../lib/utils.ts";
 import { api } from "../../services/api.ts";
 import { queryKeys } from "../../services/queries.ts";
 import type { Candle, Order, Position, Symbol } from "../../services/schemas.ts";
+import type { MarketSnapshot } from "../../services/marketSnapshot.ts";
 import { toast } from "../../services/toast.ts";
 import {
   CHART_COLORS,
@@ -73,6 +75,7 @@ import {
   getMinMove,
   toUnixMs,
   toUnixSeconds,
+  type ManualDailyCandle,
 } from "./utils.ts";
 
 // ── Staleness recovery ─────────────────────────────────────────────────────
@@ -194,7 +197,7 @@ function makeHistoryLoader(
 // ── Props ────────────────────────────────────────────────────
 
 export interface ChartPanelProps {
-  candles: Candle[];
+  candles: Array<Candle | ManualDailyCandle>;
   selectedSymbol: string;
   timeframe: Timeframe;
   isDark: boolean;
@@ -259,6 +262,9 @@ export interface ChartPanelProps {
    * staleness watchdog must not treat the old last-bar as a data gap.
    */
   isReplaying?: boolean;
+  dataMode?: "streaming" | "manual-daily";
+  dataIdentityKey?: string;
+  manualSnapshot?: MarketSnapshot | null;
 }
 
 // ── Chart plugin overlays ─────────────────────────────────────────────────────
@@ -277,6 +283,7 @@ interface PluginBuildCtx {
   isDark: boolean;
   timeframe: Timeframe;
   symbolCategory?: string;
+  dateFormatter?: (time: Time) => [string, string];
 }
 
 const EQUITY_CATEGORY = /stock|equit|share|etf|index|indices/i;
@@ -301,8 +308,8 @@ const PLUGIN_FACTORIES: Record<string, (ctx: PluginBuildCtx) => ISeriesPrimitive
   session: () => new SessionHighlighting(forexSessionHighlighter),
   "session-breaks": buildSessionBreaks,
   bands: () => new BandsIndicator(),
-  tooltip: () => new TooltipPrimitive({}),
-  "delta-tooltip": () => new DeltaTooltipPrimitive({}),
+  tooltip: ({ dateFormatter }) => new TooltipPrimitive({ dateFormatter }),
+  "delta-tooltip": ({ dateFormatter }) => new DeltaTooltipPrimitive({ dateFormatter }),
 };
 
 function buildPlugin(id: string, ctx: PluginBuildCtx): ISeriesPrimitive<Time> | null {
@@ -316,11 +323,11 @@ interface OhlcvLegend {
   h: number;
   l: number;
   c: number;
-  v: number;
+  v: number | null;
   change: number;
 }
 
-function candleToLegend(c: CandlestickData<Time>, volume: number): OhlcvLegend {
+function candleToLegend(c: CandlestickData<Time>, volume: number | null): OhlcvLegend {
   const change = c.open ? ((c.close - c.open) / c.open) * 100 : 0;
   return { o: c.open, h: c.high, l: c.low, c: c.close, v: volume, change };
 }
@@ -347,7 +354,7 @@ interface RtCtx {
   volume: ISeriesApi<"Histogram"> | null;
   lastCandle: Ref<CandlestickData<Time> | null>;
   liveCandleTs: Ref<number>;
-  legendVol: Ref<number>;
+  legendVol: Ref<number | null>;
   gapAt: Ref<number>;
   bidLine: Ref<IPriceLine | null>;
   askLine: Ref<IPriceLine | null>;
@@ -447,7 +454,7 @@ function paintTickVolume(
   try {
     ctx.volume.update({
       time: bucketTime,
-      value: ctx.legendVol.current,
+      value: ctx.legendVol.current ?? 0,
       color: bar.close >= bar.open ? ctx.colors.volumeUp : ctx.colors.volumeDown,
     });
   } catch {
@@ -603,7 +610,14 @@ function legendFromSeries(
 ): OhlcvLegend | null {
   const last = chartData[chartData.length - 1];
   if (!last) return null;
-  const vol = volumeData.length > 0 ? (volumeData[volumeData.length - 1]?.value ?? 0) : 0;
+  let vol: number | null = null;
+  for (let index = volumeData.length - 1; index >= 0; index--) {
+    const candidate = volumeData[index];
+    if (candidate && candidate.time === last.time) {
+      vol = candidate.value;
+      break;
+    }
+  }
   return candleToLegend(last, vol);
 }
 
@@ -802,7 +816,7 @@ function addOrderOverlay(
 function restoreLegendOnLeave(
   restored: Ref<boolean>,
   lastCandle: Ref<CandlestickData<Time> | null>,
-  legendVol: Ref<number>,
+  legendVol: Ref<number | null>,
   setLegend: Dispatch<SetStateAction<OhlcvLegend | null>>,
 ): void {
   if (!restored.current && lastCandle.current) {
@@ -899,7 +913,7 @@ function OhlcvLegendRow({ legend, pipDigits }: { legend: OhlcvLegend; pipDigits:
         {legend.change >= 0 ? "+" : ""}
         {legend.change.toFixed(2)}%
       </span>
-      {legend.v > 0 && (
+      {legend.v !== null && (
         <>
           <span className="text-muted-foreground/70">V</span>
           <span className="text-foreground/60">{legend.v.toLocaleString()}</span>
@@ -923,6 +937,12 @@ function BidAskRow({ tick, pipDigits }: { tick: TickData; pipDigits: number }) {
   );
 }
 
+function manualDelayLabel(snapshot: MarketSnapshot): string {
+  if (snapshot.delay.status === "unknown") return "지연 알 수 없음";
+  if (snapshot.delay.status === "realtime") return "실시간";
+  return `${snapshot.delay.minutes ?? "?"}분 지연`;
+}
+
 // Symbol / timeframe / OHLCV / countdown header in the chart's top-left corner.
 // Extracted so the visibility branching doesn't inflate ChartPanel's CC.
 function ChartLegendHeader({
@@ -934,6 +954,8 @@ function ChartLegendHeader({
   pipDigits,
   showOhlcLegend,
   showCountdown,
+  manualSnapshot,
+  activeIndicators,
 }: {
   selectedSymbol: string;
   timeframe: Timeframe;
@@ -943,10 +965,22 @@ function ChartLegendHeader({
   pipDigits: number;
   showOhlcLegend: boolean;
   showCountdown: boolean;
+  manualSnapshot?: MarketSnapshot | null;
+  activeIndicators: IndicatorType[];
 }) {
   return (
-    <div className="absolute top-2 left-3 z-10 pointer-events-none select-none">
-      <div className="flex items-center gap-2 text-[11px] font-mono leading-none mb-1">
+    <div
+      className={cn(
+        "absolute top-2 z-10 pointer-events-none select-none",
+        manualSnapshot ? "left-14 right-[88px]" : "left-3",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2 text-[11px] font-mono leading-none mb-1",
+          manualSnapshot && "flex-wrap gap-y-1",
+        )}
+      >
         <span className="text-foreground font-bold text-[13px] tracking-tight">
           {selectedSymbol}
         </span>
@@ -961,6 +995,26 @@ function ChartLegendHeader({
       </div>
       {/* Secondary info row: Bid / Ask / Spread */}
       {tick && <BidAskRow tick={tick} pipDigits={pipDigits} />}
+      {manualSnapshot && (
+        <div className="mt-1 flex w-full min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1 text-[10px] font-mono text-muted-foreground">
+          <span>시장 {manualSnapshot.market}</span>
+          <span>조회 시장 {manualSnapshot.query_market}</span>
+          {manualSnapshot.quote.last !== null && <span>Last {manualSnapshot.quote.last}</span>}
+          {manualSnapshot.quote.bid !== null && <span>Bid {manualSnapshot.quote.bid}</span>}
+          {manualSnapshot.quote.ask !== null && <span>Ask {manualSnapshot.quote.ask}</span>}
+          <span>{manualSnapshot.currency}</span>
+          <span>{manualSnapshot.source.toUpperCase()}</span>
+          <span>{manualDelayLabel(manualSnapshot)}</span>
+          <span className="max-w-full break-all">수집 {manualSnapshot.acquired_at}</span>
+          {manualSnapshot.provider_as_of !== null && (
+            <span className="max-w-full break-all">제공자 {manualSnapshot.provider_as_of}</span>
+          )}
+          {activeIndicators.includes("VWAP") &&
+            manualSnapshot.bars.some((bar) => bar.volume === null) && (
+              <span role="status">VWAP unavailable · volume missing</span>
+            )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1102,6 +1156,9 @@ export function ChartPanel({
   onClearDrawings,
   onClearIndicators,
   isReplaying = false,
+  dataMode = "streaming",
+  dataIdentityKey,
+  manualSnapshot,
 }: ChartPanelProps) {
   const queryClient = useQueryClient();
   const lastGapRefetchAtRef = useRef<number>(0);
@@ -1168,7 +1225,7 @@ export function ChartPanel({
       fetchFromMs: 0,
     };
     lastGapRefetchAtRef.current = 0;
-  }, [selectedSymbol, timeframe]);
+  }, [selectedSymbol, timeframe, dataIdentityKey]);
 
   // ── Drawing selection (floating toolbar / settings dialog / object tree) ──
   const [selectedDrawingIds, setSelectedDrawingIds] = useState<string[]>([]);
@@ -1287,10 +1344,13 @@ export function ChartPanel({
   // Merge scroll-loaded historical extension (older) with the live data (newer).
   // useChartData deduplicates by timestamp, so overlap is safe.
   const allCandles = useMemo(
-    () => (historicalExtra.length === 0 ? candles : [...historicalExtra, ...candles]),
-    [historicalExtra, candles],
+    () =>
+      dataMode === "manual-daily" || historicalExtra.length === 0
+        ? candles
+        : [...historicalExtra, ...candles],
+    [historicalExtra, candles, dataMode],
   );
-  const { chartData, volumeData } = useChartData(allCandles, colors);
+  const { chartData, volumeData, indicatorData } = useChartData(allCandles, colors);
 
   const {
     newsConfig,
@@ -1389,7 +1449,16 @@ export function ChartPanel({
     [onAddDrawing, pipDigits, timeframe, selectedSymbol],
   );
 
-  useIndicators(chartRef, candleSeriesRef, chartData, activeIndicators, isDark);
+  useIndicators(
+    chartRef,
+    candleSeriesRef,
+    chartData,
+    activeIndicators,
+    isDark,
+    dataMode === "manual-daily" ? indicatorData : undefined,
+    dataMode === "manual-daily",
+    chartEpoch,
+  );
 
   // ── Replay trade event markers ─────────────────────────────
   useEffect(() => {
@@ -1484,7 +1553,15 @@ export function ChartPanel({
         fixLeftEdge: false,
         fixRightEdge: false,
         borderVisible: true,
+        tickMarkFormatter:
+          dataMode === "manual-daily"
+            ? (time: Time) => formatUtcTradingDateTime(time)[0]
+            : undefined,
       },
+      localization:
+        dataMode === "manual-daily"
+          ? { timeFormatter: (time: Time) => formatUtcTradingDateTime(time)[0] }
+          : undefined,
       watermark: {
         visible: true,
         text: selectedSymbol,
@@ -1555,7 +1632,7 @@ export function ChartPanel({
       const data = param.seriesData.get(candleSeries) as CandlestickData<Time> | undefined;
       if (data) {
         const vol = param.seriesData.get(volumeSeries) as HistogramData<Time> | undefined;
-        setLegend(candleToLegend(data, vol?.value || 0));
+        setLegend(candleToLegend(data, vol?.value ?? null));
       }
     });
 
@@ -1615,23 +1692,26 @@ export function ChartPanel({
     // symbol/timeframe/theme change: the cleanup sets it to true before
     // unsubscribing so any in-flight `onLoaded` callback is silently dropped.
     let historyLoadCancelled = false;
-    const handleRangeChange = makeHistoryLoader(
-      selectedSymbol,
-      timeframeRef,
-      candleSeriesRef,
-      loadMoreRef,
-      (bars) => {
-        if (!historyLoadCancelled) setHistoricalExtra((prev) => [...bars, ...prev]);
-      },
-    );
-    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
+    const handleRangeChange =
+      dataMode === "manual-daily"
+        ? null
+        : makeHistoryLoader(
+            selectedSymbol,
+            timeframeRef,
+            candleSeriesRef,
+            loadMoreRef,
+            (bars) => {
+              if (!historyLoadCancelled) setHistoricalExtra((prev) => [...bars, ...prev]);
+            },
+          );
+    if (handleRangeChange) chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
 
     // Signal listener-binding hooks that a live chart instance now exists.
     setChartEpoch((e) => e + 1);
 
     return () => {
       historyLoadCancelled = true;
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+      if (handleRangeChange) chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       ro.disconnect();
       drawingManager.destroy();
       drawingManagerRef.current = null;
@@ -1648,7 +1728,7 @@ export function ChartPanel({
       // Clear per-chart state so it doesn't bleed into the recreated chart
       // (theme toggle also destroys/recreates the chart instance).
       lastCandleRef.current = null;
-      legendVolRef.current = 0;
+      legendVolRef.current = null;
       liveCandleTsRef.current = 0;
       loadMoreRef.current = {
         loading: false,
@@ -1755,7 +1835,7 @@ export function ChartPanel({
   const liveCandleTsRef = useRef<number>(0);
   // Last known volume — needed to keep the volume bar coloured during tick
   // smoothing without overwriting the value with 0.
-  const legendVolRef = useRef<number>(0);
+  const legendVolRef = useRef<number | null>(null);
 
   // Bundle the refs/config the real-time helpers need. Memoised so the live
   // effects can depend on `makeRtCtx` directly — it changes identity exactly when
@@ -1786,17 +1866,31 @@ export function ChartPanel({
     latestLiveCandleRef.current = liveCandle;
   }, [liveCandle]);
 
-  // Update candle data from server (historical fetch / periodic sync)
+  // Populate each live chart instance; chartEpoch replays stable data after recreation.
   useEffect(() => {
     const series = candleSeriesRef.current;
-    if (!series || chartData.length === 0) return;
+    if (!series) return;
     const ctx = makeRtCtx(series);
-    const loadKey = `${selectedSymbol}:${timeframe}`;
+    const loadKey = dataIdentityKey ?? `${selectedSymbol}:${timeframe}`;
     const isNewChart = lastLoadKeyRef.current !== loadKey;
+
+    if (chartData.length === 0) {
+      series.setData([]);
+      volumeSeriesRef.current?.setData([]);
+      lastCandleRef.current = null;
+      setLegend(null);
+      lastLoadKeyRef.current = loadKey;
+      return;
+    }
 
     series.setData(chartData);
     volumeSeriesRef.current?.setData(volumeData);
     lastCandleRef.current = chartData[chartData.length - 1] ?? null;
+    const lastTime = lastCandleRef.current?.time;
+    legendVolRef.current =
+      lastTime === undefined
+        ? null
+        : (volumeData.find((row) => row.time === lastTime)?.value ?? null);
     setLegend(legendFromSeries(chartData, volumeData));
 
     const buffered = latestLiveCandleRef.current;
@@ -1810,8 +1904,17 @@ export function ChartPanel({
     lastLoadKeyRef.current = loadKey;
     liveCandleTsRef.current = 0;
     replayBufferedLive(buffered, chartData, ctx);
-    return scheduleStaleRefetch(chartData, ctx);
-  }, [chartData, volumeData, selectedSymbol, timeframe, makeRtCtx]);
+    return dataMode === "manual-daily" ? undefined : scheduleStaleRefetch(chartData, ctx);
+  }, [
+    chartData,
+    volumeData,
+    selectedSymbol,
+    timeframe,
+    makeRtCtx,
+    dataIdentityKey,
+    dataMode,
+    chartEpoch,
+  ]);
 
   // ── Real-time candle updates ──────────────────────────
 
@@ -1821,19 +1924,21 @@ export function ChartPanel({
   // batches DOM writes internally and series.update is O(1)). The guard below
   // skips painting until history exists so a live WS candle can't render alone.
   useEffect(() => {
+    if (dataMode === "manual-daily") return;
     const series = candleSeriesRef.current;
     if (!series || !liveCandle || !lastCandleRef.current) return;
     applyServerCandle(liveCandle, makeRtCtx(series));
-  }, [liveCandle, makeRtCtx]);
+  }, [liveCandle, makeRtCtx, dataMode]);
 
   // Secondary: tick-based smoothing between server CandleUpdate pulses.
   // Server CandleUpdate is authoritative — when it arrives next it will
   // overwrite this tick-merged bar via series.update.
   useEffect(() => {
+    if (dataMode === "manual-daily") return;
     const series = candleSeriesRef.current;
     if (!series || !tick) return;
     applyTick(tick, makeRtCtx(series));
-  }, [tick, makeRtCtx]);
+  }, [tick, makeRtCtx, dataMode]);
 
   // ── Line-cross price alerts (client-side, in-session) ──────────
   // Fire a toast + beep when the live mid price crosses an alert-enabled
@@ -1866,7 +1971,7 @@ export function ChartPanel({
   useEffect(() => {
     // Replay shows a historical slice — its last bar is hours or days old by
     // design, so the staleness check would fire a refetch loop. Skip it.
-    if (isReplaying) return;
+    if (isReplaying || dataMode === "manual-daily") return;
     const intervalSec = (TF_INTERVAL_MS[timeframe] ?? 60_000) / 1000;
     const id = setInterval(() => {
       if (!lastCandleRef.current) return;
@@ -1875,7 +1980,7 @@ export function ChartPanel({
       requestGapRefetch(lastGapRefetchAtRef, queryClient, selectedSymbol, timeframe);
     }, 30_000);
     return () => clearInterval(id);
-  }, [selectedSymbol, timeframe, queryClient, isReplaying]);
+  }, [selectedSymbol, timeframe, queryClient, isReplaying, dataMode]);
 
   // ── Chart plugin overlays ──────────────────────────────────
   // Re-runs when active plugins change or the chart is recreated (isDark /
@@ -1889,10 +1994,15 @@ export function ChartPanel({
     attachPlugins(
       series,
       activePlugins,
-      { isDark, timeframe, symbolCategory },
+       {
+         isDark,
+         timeframe,
+         symbolCategory,
+         dateFormatter: dataMode === "manual-daily" ? formatUtcTradingDateTime : undefined,
+       },
       chartPluginsRef.current,
     );
-  }, [activePlugins, isDark, selectedSymbol, timeframe, symbolCategory]);
+  }, [activePlugins, isDark, selectedSymbol, timeframe, symbolCategory, dataMode, chartEpoch]);
 
   // ── Live bid/ask price tracking lines ──────────────────────
   // applyBidAskLines moves the existing price lines in-place (applyOptions) or
@@ -1950,6 +2060,8 @@ export function ChartPanel({
         pipDigits={pipDigits}
         showOhlcLegend={chartPrefs.showOhlcLegend}
         showCountdown={chartPrefs.showCountdown}
+        manualSnapshot={manualSnapshot}
+        activeIndicators={activeIndicators}
       />
 
       {/* Drag-to-edit tooltip */}
@@ -2069,7 +2181,11 @@ export function ChartPanel({
       />
 
       {/* Chart container — cursor is managed imperatively by DrawingToolsManager */}
-      <div ref={containerRef} className="w-full h-full" onContextMenu={handleChartContextMenu} />
+      <div
+        ref={containerRef}
+        className="relative w-full h-full"
+        onContextMenu={handleChartContextMenu}
+      />
 
       {/* Left vertical tool rail (TradingView-style grouped flyouts) */}
       <DrawingToolRail drawingTool={drawingTool} onDrawingTool={(t) => onDrawingToolSelect?.(t)} />
@@ -2079,7 +2195,7 @@ export function ChartPanel({
 
 // ── Local helper: Build chart data (candles + volume) ────────
 
-type CandleRow = CandlestickData<Time> & { volume: number };
+type CandleRow = CandlestickData<Time> & { volume: number | null };
 
 // Treat values below 1e12 as seconds, at/above as milliseconds.
 function secOrMsToMs(v: number): number {
@@ -2087,22 +2203,23 @@ function secOrMsToMs(v: number): number {
 }
 
 // Normalise a raw candle's timestamp (seconds, ms, or ISO string) to unix seconds.
-function candleTimeSec(c: Candle): number {
+function candleTimeSec(c: Candle | ManualDailyCandle): number {
   let tMs = NaN;
   if (typeof c.time === "number" && c.time > 0) tMs = secOrMsToMs(c.time);
-  else if (typeof c.timestamp === "number" && c.timestamp > 0) tMs = secOrMsToMs(c.timestamp);
-  else if (typeof c.timestamp === "string") tMs = Date.parse(c.timestamp);
+  else if ("timestamp" in c && typeof c.timestamp === "number" && c.timestamp > 0)
+    tMs = secOrMsToMs(c.timestamp);
+  else if ("timestamp" in c && typeof c.timestamp === "string") tMs = Date.parse(c.timestamp);
   return Number.isNaN(tMs) ? NaN : Math.floor(tMs / 1000);
 }
 
-function toCandleRow(c: Candle): CandleRow {
+function toCandleRow(c: Candle | ManualDailyCandle): CandleRow {
   return {
     time: candleTimeSec(c) as Time,
     open: Number(c.open),
     high: Number(c.high),
     low: Number(c.low),
     close: Number(c.close),
-    volume: Number(c.volume) || 0,
+    volume: c.volume === null ? null : Number(c.volume),
   };
 }
 
@@ -2117,7 +2234,10 @@ function dedupeByTime(sorted: CandleRow[]): CandleRow[] {
   return out;
 }
 
-function useChartData(candles: Candle[], colors: { volumeUp: string; volumeDown: string }) {
+function useChartData(
+  candles: Array<Candle | ManualDailyCandle>,
+  colors: { volumeUp: string; volumeDown: string },
+) {
   return useMemo(() => {
     const sorted = candles
       .map(toCandleRow)
@@ -2126,12 +2246,24 @@ function useChartData(candles: Candle[], colors: { volumeUp: string; volumeDown:
     const deduped = dedupeByTime(sorted);
 
     const chartData: CandlestickData<Time>[] = deduped.map(({ volume: _v, ...rest }) => rest);
-    const volumeData: HistogramData<Time>[] = deduped.map((c) => ({
-      time: c.time,
-      value: c.volume,
-      color: c.close >= c.open ? colors.volumeUp : colors.volumeDown,
+    const volumeData: HistogramData<Time>[] = deduped.flatMap((c) =>
+      c.volume === null
+        ? []
+        : [{
+            time: c.time,
+            value: c.volume,
+            color: c.close >= c.open ? colors.volumeUp : colors.volumeDown,
+          }],
+    );
+    const indicatorData: CandleData[] = deduped.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      ...(c.volume === null ? {} : { volume: c.volume }),
     }));
 
-    return { chartData, volumeData };
+    return { chartData, volumeData, indicatorData };
   }, [candles, colors.volumeUp, colors.volumeDown]);
 }

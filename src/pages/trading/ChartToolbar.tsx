@@ -51,6 +51,23 @@ import {
 import { ChartTemplatesMenu } from "./ChartTemplatesMenu.tsx";
 import { ReplayHUD } from "./ReplayHUD.tsx";
 import { getPipDigits } from "./utils.ts";
+import type { MarketAccountList, MarketSnapshotIdentity } from "../../services/marketSnapshot.ts";
+
+export interface KbManualControls {
+  accounts: MarketAccountList["accounts"];
+  accountId: string;
+  market: MarketSnapshotIdentity["market"];
+  queryMarket: MarketSnapshotIdentity["query_market"];
+  ticker: string;
+  pending: boolean;
+  status: string;
+  error: string;
+  onAccountChange: (value: string) => void;
+  onMarketChange: (value: MarketSnapshotIdentity["market"]) => void;
+  onQueryMarketChange: (value: MarketSnapshotIdentity["query_market"]) => void;
+  onTickerChange: (value: string) => void;
+  onSubmit: () => void;
+}
 
 export interface ChartToolbarProps {
   selectedSymbol: string;
@@ -105,6 +122,7 @@ export interface ChartToolbarProps {
   onCycleMagnet?: () => void;
   stayInDrawingMode?: boolean;
   onToggleStayInDrawingMode?: () => void;
+  kbManual?: KbManualControls;
 }
 
 export function ChartToolbar({
@@ -138,6 +156,7 @@ export function ChartToolbar({
   onCycleMagnet,
   stayInDrawingMode = false,
   onToggleStayInDrawingMode,
+  kbManual,
 }: ChartToolbarProps) {
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -163,7 +182,7 @@ export function ChartToolbar({
           onClick={() => setShowSymbolSearch((v) => !v)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-secondary font-bold text-sm tracking-tight"
         >
-          {selectedSymbol}
+          {selectedSymbol || (kbManual ? "조회 종목" : "")}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </button>
 
@@ -179,14 +198,20 @@ export function ChartToolbar({
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center gap-2 p-3 border-b border-border">
-                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <input
-                    autoFocus
-                    placeholder="Search symbols..."
-                    value={symbolFilter}
-                    onChange={(e) => setSymbolFilter(e.target.value)}
-                    className="flex-1 bg-transparent text-base outline-none"
-                  />
+                  {kbManual ? (
+                    <span className="flex-1 text-sm font-semibold">KB market lookup</span>
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <input
+                        autoFocus
+                        placeholder="Search symbols..."
+                        value={symbolFilter}
+                        onChange={(e) => setSymbolFilter(e.target.value)}
+                        className="flex-1 bg-transparent text-base outline-none"
+                      />
+                    </>
+                  )}
                   <button
                     onClick={() => {
                       setShowSymbolSearch(false);
@@ -198,7 +223,13 @@ export function ChartToolbar({
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto overscroll-contain">
-                  {filteredSymbols.length === 0 ? (
+                  {kbManual ? (
+                    <KbManualForm
+                      controls={kbManual}
+                      autoFocusTicker
+                      onSubmitted={() => setShowSymbolSearch(false)}
+                    />
+                  ) : filteredSymbols.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                       No symbols match &ldquo;{symbolFilter}&rdquo;
                     </div>
@@ -234,7 +265,12 @@ export function ChartToolbar({
 
             {/* Desktop: absolute dropdown */}
             <div className="hidden md:block absolute top-full left-0 z-50 mt-1 w-64 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
-              <input
+              {kbManual ? (
+                <KbManualForm
+                  controls={kbManual}
+                  onSubmitted={() => setShowSymbolSearch(false)}
+                />
+              ) : <><input
                 autoFocus
                 placeholder="Search symbols..."
                 value={symbolFilter}
@@ -259,11 +295,25 @@ export function ChartToolbar({
                     <span className="text-muted-foreground text-xs">{s.category}</span>
                   </button>
                 ))}
-              </div>
+              </div></>}
             </div>
           </>
         )}
       </div>
+
+      {kbManual && (kbManual.error || kbManual.status) && (
+        <div className="min-w-0 max-w-56 truncate text-[10px]" aria-live="polite" aria-atomic="true">
+          {kbManual.error ? (
+            <span role="alert" className="text-destructive">
+              {kbManual.error}
+            </span>
+          ) : (
+            <span role="status" className="text-muted-foreground">
+              {kbManual.status}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Live Price — bid / ask badges like TradingView */}
       {tick && (
@@ -293,14 +343,20 @@ export function ChartToolbar({
           <button
             key={tf}
             onClick={() => onTimeframeChange(tf)}
-            disabled={isReplaying}
-            title={isReplaying ? "Timeframe is fixed to 1m during replay" : undefined}
+            disabled={isReplaying || !!kbManual}
+            title={
+              kbManual
+                ? "KB market snapshots are daily-only"
+                : isReplaying
+                  ? "Timeframe is fixed to 1m during replay"
+                  : undefined
+            }
             className={cn(
               "px-2 py-1 rounded-md text-xs font-medium transition-all",
               tf === timeframe
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "hover:bg-secondary/80 text-muted-foreground hover:text-foreground",
-              isReplaying && "opacity-40 cursor-default",
+              (isReplaying || kbManual) && "opacity-40 cursor-default",
             )}
           >
             {tf}
@@ -438,6 +494,90 @@ export function ChartToolbar({
         </button>
       </div>
     </div>
+  );
+}
+
+function KbManualForm({
+  controls,
+  autoFocusTicker = false,
+  onSubmitted,
+}: {
+  controls: KbManualControls;
+  autoFocusTicker?: boolean;
+  onSubmitted: () => void;
+}) {
+  const queryMarkets =
+    controls.market === "US" ? (["NAS", "NYS", "AMX"] as const) : (["KOSPI", "KOSDAQ"] as const);
+  return (
+    <form
+      className="grid gap-2 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        controls.onSubmit();
+        onSubmitted();
+      }}
+    >
+      <label className="grid gap-1 text-xs text-muted-foreground">
+        계좌
+        <select
+          value={controls.accountId}
+          onChange={(event) => controls.onAccountChange(event.target.value)}
+          className="w-full"
+        >
+          <option value="">계좌 선택</option>
+          {controls.accounts.map((account) => (
+            <option key={account.id} value={account.id} disabled={account.status !== "active"}>
+              {account.alias}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs text-muted-foreground">
+        시장
+        <select
+          value={controls.market}
+          onChange={(event) =>
+            controls.onMarketChange(event.target.value as MarketSnapshotIdentity["market"])
+          }
+          className="w-full"
+        >
+          <option value="US">US</option>
+          <option value="KR">KR</option>
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs text-muted-foreground">
+        조회 시장
+        <select
+          value={controls.queryMarket}
+          onChange={(event) =>
+            controls.onQueryMarketChange(
+              event.target.value as MarketSnapshotIdentity["query_market"],
+            )
+          }
+          className="w-full"
+        >
+          {queryMarkets.map((queryMarket) => (
+            <option key={queryMarket} value={queryMarket}>
+              {queryMarket}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1 text-xs text-muted-foreground">
+        종목 코드
+        <input
+          autoFocus={autoFocusTicker}
+          value={controls.ticker}
+          onChange={(event) => controls.onTickerChange(event.target.value)}
+          inputMode={controls.market === "KR" ? "numeric" : "text"}
+          autoComplete="off"
+          className="w-full uppercase"
+        />
+      </label>
+      <button type="submit" className="btn btn-primary justify-center">
+        {controls.pending ? "조회 중…" : "조회"}
+      </button>
+    </form>
   );
 }
 

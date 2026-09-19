@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 import { api } from "./api";
+import { isKbMode } from "./runtimeMode";
 import type { AllPayoutsResponse } from "./api/accounts";
 import type { JournalEntriesResponse } from "./api/journal";
 import type { MarketDataCandlesPayload } from "./api/market-data";
@@ -103,14 +104,14 @@ export function usePositions(accountId: string | null) {
   return useQuery<Position[]>({
     queryKey: queryKeys.trading.positions(accountId!),
     queryFn: () => api.getPositions(accountId!),
-    enabled: !!accountId,
+    enabled: !isKbMode && !!accountId,
     // WS push (MarketDataBridge setQueryData) is the primary update path.
     // 10s staleTime prevents the cache from being considered stale during burst fills,
     // so rapid invalidations don't all trigger fresh fetches.
     // 30s refetchInterval is a safety-net sync in case a WS event is missed; it is
     // NOT the primary update mechanism and must not be lowered back to 2s.
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: isKbMode ? false : 30_000,
     refetchOnWindowFocus: false,
   });
 }
@@ -120,7 +121,8 @@ export function useOpenPositionCount() {
   return useQuery<number>({
     queryKey: ["openPositionCount"],
     queryFn: () => api.getOpenPositionCount(),
-    refetchInterval: 5_000,
+    enabled: !isKbMode,
+    refetchInterval: isKbMode ? false : 5_000,
   });
 }
 
@@ -128,9 +130,9 @@ export function useOrders(accountId: string | null, status?: string) {
   return useQuery<Order[]>({
     queryKey: queryKeys.trading.orders(accountId!, status),
     queryFn: () => api.getOrders(accountId!, status),
-    enabled: !!accountId,
+    enabled: !isKbMode && !!accountId,
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: isKbMode ? false : 30_000,
     refetchOnWindowFocus: false,
   });
 }
@@ -217,6 +219,7 @@ export function useSymbols() {
   return useQuery<Symbol[]>({
     queryKey: queryKeys.market.symbols,
     queryFn: () => api.getSymbols(),
+    enabled: !isKbMode,
     staleTime: 5 * 60_000, // 5min
   });
 }
@@ -249,7 +252,7 @@ export function useEconomicCalendar(currencies: string[]) {
       );
       return res as EconomicCalendarEvent[];
     },
-    enabled: currencies.length > 0,
+    enabled: !isKbMode && currencies.length > 0,
     staleTime: 10 * 60_000, // refresh every 10min
   });
 }
@@ -266,6 +269,7 @@ export function useCandles(
     // stale cache from a previous replay / normal session.
     queryKey: [...queryKeys.market.candles(symbol, timeframe), limit ?? "auto", replayVersion ?? 0],
     queryFn: () => api.getCandlesWithMeta(symbol, timeframe, limit),
+    enabled: !isKbMode,
     // Extract just the candles array for consumers — raw payload (with isPartial)
     // is still accessible via query.state.data inside refetchInterval below.
     select: (data) => data.candles,
@@ -277,7 +281,9 @@ export function useCandles(
     placeholderData: (prev) => prev,
     // When the server signals the response is partial (backfill queued), poll
     // at 3 s until data fills in. Otherwise use the 5-min safety-net cadence.
-    refetchInterval: (query) => (query.state.data?.metadata?.isPartial ? 3_000 : 5 * 60_000),
+    refetchInterval: isKbMode
+      ? false
+      : (query) => (query.state.data?.metadata?.isPartial ? 3_000 : 5 * 60_000),
   });
 }
 
@@ -286,9 +292,9 @@ export function useAccountMetrics(accountId: string | null) {
   return useQuery({
     queryKey: ["account-metrics", accountId] as const,
     queryFn: () => api.getAccountMetrics(accountId!),
-    enabled: !!accountId,
+    enabled: !isKbMode && !!accountId,
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: isKbMode ? false : 30_000,
   });
 }
 
@@ -297,8 +303,9 @@ export function useMarketDataHealth() {
   return useQuery({
     queryKey: ["market-data-health"] as const,
     queryFn: () => api.getMarketDataHealth(),
+    enabled: !isKbMode,
     staleTime: 5_000,
-    refetchInterval: 5_000,
+    refetchInterval: isKbMode ? false : 5_000,
   });
 }
 
@@ -577,7 +584,7 @@ export function useJournalEntries(accountId: string | null, opts?: { symbol?: st
   return useQuery<JournalEntriesResponse>({
     queryKey: ["journal", accountId, opts?.symbol] as const,
     queryFn: () => api.getJournalEntries(accountId!, { limit: 100, symbol: opts?.symbol }),
-    enabled: !!accountId,
+    enabled: !isKbMode && !!accountId,
     staleTime: 10_000,
   });
 }
@@ -741,9 +748,10 @@ export function useAiTraderEnabled() {
   return useQuery({
     queryKey: ["ai-trader", "enabled"] as const,
     queryFn: () => api.isAiTraderEnabled(),
+    enabled: !isKbMode,
     staleTime: 60_000,
-    retry: 1,
-    refetchOnWindowFocus: true,
+    retry: isKbMode ? false : 1,
+    refetchOnWindowFocus: !isKbMode,
   });
 }
 
